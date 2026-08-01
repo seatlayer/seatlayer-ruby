@@ -1,0 +1,34 @@
+AllCops:
+  TargetRubyVersion: 3.0
+  NewCops: enable
+  SuggestExtensions: false
+
+Metrics/MethodLength:
+  Max: 40
+Metrics/AbcSize:
+  Max: 40
+Metrics/ClassLength:
+  Max: 250
+Metrics/ParameterLists:
+  Max: 8
+Metrics/CyclomaticComplexity:
+  Max: 12
+Metrics/PerceivedComplexity:
+  Max: 12
+Layout/LineLength:
+  Max: 110
+Style/Documentation:
+  Enabled: true
+
+# `bundle gem` generates double-quoted strings, and the codebase is written that
+# way; the default single-quote rule would be pure churn.
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+
+# Specs are allowed to be long and to describe behaviour in many examples.
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*.rb"
+    - "*.gemspec"
