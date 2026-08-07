@@ -87,5 +87,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: gem
-      - uses: rubygems/configure-trusted-publishing@v1
+      # Exchanges the GitHub OIDC token for short-lived RubyGems credentials.
+      # Pinned to a SHA rather than a moving tag: this action is the one step
+      # that can push under our identity, so it is exactly the wrong place to
+      # trust a tag someone else can repoint. This is the same SHA that
+      # rubygems/release-gem pins internally.
+      #
+      # NOT rubygems/release-gem, despite that being the headline action: it
+      # runs `bundle exec rake release`, which builds AND creates and pushes the
+      # git tag itself. This workflow is triggered BY the tag, so that would
+      # collide — and there is no Rakefile here for it to run.
+      - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
       - run: gem push ./*.gem
