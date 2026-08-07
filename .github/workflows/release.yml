@@ -1,0 +1,91 @@
+name: Release
+
+# Publishes to RubyGems via Trusted Publishing (OIDC). No API key exists in this
+# repository, in Actions secrets, or in Doppler.
+#
+# This matters more here than on any other registry: seatlayer.gemspec sets
+# `rubygems_mfa_required = "true"`, so a plain `gem push` demands an interactive
+# OTP every single time and cannot be automated at all. Trusted Publishing
+# satisfies the MFA requirement WITHOUT the prompt. It is the only way this gem
+# ships from CI.
+#
+# To release: push a tag matching lib/seatlayer/version.rb.
+#
+#     git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Gate
+        run: |
+          bundle exec rubocop
+          bundle exec rspec
+
+      - name: Refuse to publish if the tag and VERSION disagree
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver="$(ruby -r ./lib/seatlayer/version -e 'print SeatLayer::VERSION')"
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::tag v$tag does not match SeatLayer::VERSION $ver"
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          rm -f ./*.gem
+          gem build seatlayer.gemspec
+
+      - name: The gem must ship the library and nothing else
+        run: |
+          # `files` in the gemspec is explicit globs, never `git ls-files`, so
+          # spec/, .github/, .rubocop.yml, Gemfile and AGENTS.md stay out. This
+          # asserts that stays true — a stowaway reaches every consumer's bundle.
+          tar -xOf ./seatlayer-*.gem data.tar.gz | tar tz | sort > /tmp/contents.txt
+          cat /tmp/contents.txt
+          if grep -qE '^(spec/|\.github/|AGENTS\.md|Gemfile|\.rubocop\.yml)' /tmp/contents.txt; then
+            echo "::error::repo-only files found in the gem"
+            exit 1
+          fi
+          count=$(wc -l < /tmp/contents.txt)
+          if [ "$count" -ne 10 ]; then
+            echo "::error::expected 10 files in the gem, found $count"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gem
+          path: ./*.gem
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: rubygems
+      url: https://rubygems.org/gems/seatlayer
+    permissions:
+      # Required for OIDC, and scoped to the job that actually publishes.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - uses: actions/download-artifact@v4
+        with:
+          name: gem
+      - uses: rubygems/configure-trusted-publishing@v1
+      - run: gem push ./*.gem
