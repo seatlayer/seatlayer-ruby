@@ -11,10 +11,16 @@ module SeatLayer
   # Never price from what the browser tells you. +retrieve_hold+ is the
   # authoritative answer, which is why it is a separate call.
   class Inventory < Resource
+    # Explicit keywords keep allocation authority visible at every sale call.
+    # rubocop:disable Metrics/ParameterLists
     def hold(event_key, labels: nil, selections: nil, ttl_ms: nil,
-             replace_hold_id: nil, idempotency_key: nil)
+             replace_hold_id: nil, channel_ids: nil, ignore_channel_restrictions: nil,
+             reason: nil, idempotency_key: nil)
       body = compact({ "labels" => labels, "selections" => selections,
-                       "ttlMs" => ttl_ms, "replaceHoldId" => replace_hold_id })
+                       "ttlMs" => ttl_ms, "replaceHoldId" => replace_hold_id,
+                       "channelIds" => channel_ids,
+                       "ignoreChannelRestrictions" => ignore_channel_restrictions,
+                       "reason" => reason })
       @client.post(path(event_key, "/hold"), body, idempotency_key: idempotency_key)
     end
 
@@ -24,9 +30,13 @@ module SeatLayer
     # order get the same answer for the same inventory. A +qty+ above the server
     # cap is clamped, not rejected.
     def hold_best_available(event_key, qty:, category_key: nil, zone_id: nil,
-                            ttl_ms: nil, idempotency_key: nil)
+                            ttl_ms: nil, channel_ids: nil, ignore_channel_restrictions: nil,
+                            reason: nil, idempotency_key: nil)
       body = compact({ "qty" => qty, "categoryKey" => category_key,
-                       "zoneId" => zone_id, "ttlMs" => ttl_ms })
+                       "zoneId" => zone_id, "ttlMs" => ttl_ms,
+                       "channelIds" => channel_ids,
+                       "ignoreChannelRestrictions" => ignore_channel_restrictions,
+                       "reason" => reason })
       @client.post(path(event_key, "/best-available"), body, idempotency_key: idempotency_key)
     end
 
@@ -35,11 +45,16 @@ module SeatLayer
     # Prefer this over hold-then-book when payment is already taken: a failure
     # between two calls would strand inventory until the TTL expired.
     def book_best_available(event_key, qty:, booking_ref:, category_key: nil,
-                            zone_id: nil, idempotency_key: nil)
-      body = compact({ "qty" => qty, "bookingRef" => booking_ref,
-                       "categoryKey" => category_key, "zoneId" => zone_id })
+                            zone_id: nil, channel_ids: nil, ignore_channel_restrictions: nil,
+                            reason: nil, idempotency_key: nil)
+      body = compact({ "qty" => qty, "bookingRef" => normalise_booking_ref(booking_ref),
+                       "categoryKey" => category_key, "zoneId" => zone_id,
+                       "channelIds" => channel_ids,
+                       "ignoreChannelRestrictions" => ignore_channel_restrictions,
+                       "reason" => reason })
       @client.post(path(event_key, "/best-available-book"), body, idempotency_key: idempotency_key)
     end
+    # rubocop:enable Metrics/ParameterLists
 
     # Push an active hold's expiry out by a fresh window before it lapses.
     #
@@ -60,20 +75,26 @@ module SeatLayer
       @client.post(path(event_key, "/release"), { "labels" => labels, "holdId" => hold_id })
     end
 
-    def book(event_key, hold_id: nil, labels: nil, booking_ref: nil, idempotency_key: nil)
-      body = compact({ "holdId" => hold_id, "labels" => labels, "bookingRef" => booking_ref })
+    def book(event_key, hold_id: nil, labels: nil, booking_ref: nil, channel_ids: nil,
+             ignore_channel_restrictions: nil, reason: nil, idempotency_key: nil)
+      body = compact({ "holdId" => hold_id, "labels" => labels,
+                       "bookingRef" => normalise_booking_ref(booking_ref),
+                       "channelIds" => channel_ids,
+                       "ignoreChannelRestrictions" => ignore_channel_restrictions,
+                       "reason" => reason })
       @client.post(path(event_key, "/book"), body, idempotency_key: idempotency_key)
     end
 
     def box_office_book(event_key, labels:, booking_ref:, idempotency_key: nil)
       @client.post(path(event_key, "/box-book"),
-                   { "labels" => labels, "bookingRef" => booking_ref },
+                   { "labels" => labels, "bookingRef" => normalise_booking_ref(booking_ref) },
                    idempotency_key: idempotency_key)
     end
 
     # Reverse a booking. Requires a key with cancel authority.
-    def unbook(event_key, labels:)
-      @client.post(path(event_key, "/unbook"), { "labels" => labels })
+    def unbook(event_key, labels:, booking_ref:)
+      @client.post(path(event_key, "/unbook"),
+                   { "labels" => labels, "bookingRef" => normalise_booking_ref(booking_ref) })
     end
 
     # Hold inventory back from sale (house seats, production holds).
@@ -97,10 +118,27 @@ module SeatLayer
       @client.post(path(event_key, "/availability"), fields)
     end
 
+    # One page of inventory booking lifecycles, newest first.
+    def list_bookings(event_key, query: nil, state: nil, limit: nil, cursor: nil)
+      @client.get(path(event_key, "/bookings"),
+                  compact({ "q" => query, "state" => state, "limit" => limit, "cursor" => cursor }))
+    end
+
+    def retrieve_booking(event_key, booking_ref)
+      @client.get(path(event_key, "/bookings/#{encode(normalise_booking_ref(booking_ref))}"))
+    end
+
     private
 
     def path(event_key, suffix)
       "/v1/events/#{encode(event_key)}#{suffix}"
+    end
+
+    def normalise_booking_ref(booking_ref)
+      value = booking_ref&.strip
+      return value unless value.nil? || value.empty?
+
+      raise ArgumentError, "booking_ref is required and must be a non-empty stable reference"
     end
   end
 

@@ -257,5 +257,58 @@ RSpec.describe SeatLayer::Client do
       expect { client.inventory.extend_hold("ev_1", "h_9") }
         .to raise_error(SeatLayer::ConflictError) { |error| expect(error.code).to eq("cannot_extend") }
     end
+
+    it "requires a stable booking reference and sends it when unbooking" do
+      client, transport = build_client([{ status: 200, body: '{"ok":true}' }])
+
+      expect { client.inventory.book("ev_1", hold_id: "h_1", booking_ref: "  ") }
+        .to raise_error(ArgumentError, /booking_ref is required/)
+
+      client.inventory.unbook("ev_1", labels: ["A-1"], booking_ref: " order-42 ")
+      expect(JSON.parse(transport.calls[0].body))
+        .to eq({ "labels" => ["A-1"], "bookingRef" => "order-42" })
+    end
+  end
+
+  describe "channels and booking lifecycle" do
+    it "creates a channel using the API's camel-case contract" do
+      client, transport = build_client([{ status: 201, body: '{"ok":true}' }])
+      client.channels.create_channel("ev/1", name: "Partners", external_ref: "partner-a",
+                                             access_intent: "server")
+
+      expect(transport.calls[0].url).to eq("https://api.seatlayer.io/v1/events/ev%2F1/channels")
+      expected = { "name" => "Partners", "externalRef" => "partner-a",
+                   "accessIntent" => "server" }
+      expect(JSON.parse(transport.calls[0].body)).to eq(expected)
+    end
+
+    it "mints origin-bound buyer access for explicit allocations" do
+      client, transport = build_client([{ status: 201, body: '{"token":"bse_x"}' }])
+      client.channels.create_buyer_access_session(
+        "ev_1", include_public: false, allowed_origin: "https://tickets.example",
+                channel_ids: ["chn_partner"]
+      )
+
+      expected = { "channelIds" => ["chn_partner"], "includePublic" => false,
+                   "allowedOrigin" => "https://tickets.example" }
+      expect(JSON.parse(transport.calls[0].body)).to eq(expected)
+    end
+
+    it "passes channel authority fields through inventory holds" do
+      client, transport = build_client([{ status: 201, body: '{"holdId":"h_1"}' }])
+      client.inventory.hold("ev_1", labels: ["A-1"], channel_ids: ["chn_partner"],
+                                    ignore_channel_restrictions: false, reason: "partner order")
+
+      expected = { "labels" => ["A-1"], "channelIds" => ["chn_partner"],
+                   "ignoreChannelRestrictions" => false, "reason" => "partner order" }
+      expect(JSON.parse(transport.calls[0].body)).to eq(expected)
+    end
+
+    it "reads a booking by a normalised and encoded reference" do
+      client, transport = build_client([{ status: 200, body: "{}" }])
+      client.inventory.retrieve_booking("ev_1", " order/42 ")
+      expect(transport.calls[0].url)
+        .to eq("https://api.seatlayer.io/v1/events/ev_1/bookings/order%2F42")
+    end
   end
 end
