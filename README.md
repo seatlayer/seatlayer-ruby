@@ -1,5 +1,10 @@
 # SeatLayer Ruby SDK
 
+[![CI](https://github.com/seatlayer/seatlayer-ruby/actions/workflows/ci.yml/badge.svg)](https://github.com/seatlayer/seatlayer-ruby/actions/workflows/ci.yml)
+[![Gem](https://img.shields.io/gem/v/seatlayer.svg)](https://rubygems.org/gems/seatlayer)
+[![Ruby](https://img.shields.io/badge/Ruby-%E2%89%A53.0-CC342D.svg)](https://www.ruby-lang.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
+
 Official Ruby server SDK for the [SeatLayer](https://seatlayer.io) reserved-seating API.
 
 > **Server-side only.** This gem authenticates with your secret key. Never load it anywhere a
