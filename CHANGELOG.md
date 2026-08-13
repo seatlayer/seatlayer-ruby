@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+- Added `templates.instantiate_template` and the ticket-release lifecycle on
+  `events` (`list_ticket_releases`, `update_ticket_releases`, and
+  `close_ticket_release`). Template instantiation sends `{}` when no overrides
+  are supplied, URI-escapes identifiers, and uses exact-response replay;
+  ticket-release writes remain single-attempt.
+
 - **Security/reliability:** Mutations now default to a single attempt. Automatic header-replay
-  retries are limited to chart create/copy, event create, and workspace create, preventing
+  retries are limited to chart create/copy, template instantiation, event create, and workspace create, preventing
   transient failures from duplicating holds or best-available results and from issuing extra
   show-once credentials.
 - Aligned event, inventory, webhook, manage-session, and Designer requests with the generated

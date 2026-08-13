@@ -30,8 +30,8 @@ require "seatlayer"
 
 client = SeatLayer::Client.new(ENV.fetch("SEATLAYER_SECRET_KEY"))
 
-# 1. Provision a venue for a new organiser from one of your templates.
-chart = client.charts.copy("c_template_arena")["meta"]
+# 1. Provision a venue for a new organiser from a public template.
+chart = client.templates.instantiate_template("arena-standard")["meta"]
 client.charts.publish(chart["id"])
 
 # 2. Create an event on it.
@@ -252,11 +252,12 @@ error carries `status`, `code`, `body` and `request_id` — quote the request id
 ## Reliability
 
 **Retries.** Reads (`GET`/`HEAD`) retry 429, 408 and 5xx with exponential backoff and full jitter;
-`Retry-After` wins when the server sends it. Automatic mutation retries are limited to the four
-operations backed by exact response replay: `charts.create`, `charts.copy`, `events.create`, and
-`workspaces.create`. Other 4xx responses are never retried.
+`Retry-After` wins when the server sends it. Automatic mutation retries are limited to the five
+operations backed by exact response replay: `charts.create`, `charts.copy`,
+`templates.instantiate_template`, `events.create`, and `workspaces.create`. Other 4xx responses
+are never retried.
 
-**Idempotency.** Those four replay-backed operations carry an `Idempotency-Key`, generated when you
+**Idempotency.** Those five replay-backed operations carry an `Idempotency-Key`, generated when you
 do not supply one and reused across attempts. Other mutations are single-attempt and receive no
 automatic key. A caller-supplied key is forwarded but does not enable retries. This includes
 inventory holds and bookings, show-once credential or secret creation, unsupported operations, and
@@ -289,7 +290,8 @@ client.request("POST", "/v1/events/ev_1/some-new-route", body: { "qty" => 2 })
 | Resource | Methods |
 | --- | --- |
 | `charts` | `list` `list_all` `create` `retrieve` `update` `delete` `copy` `archive` `unarchive` `publish` |
-| `events` | `list` `list_all` `create` `retrieve` `update` `delete` `update_poster` `delete_poster` `update_chart` `close` `reopen` `archive` `retrieve_hold_ttl` `update_hold_ttl` `retrieve_report` `retrieve_log` |
+| `templates` | `instantiate_template` |
+| `events` | `list` `list_all` `create` `retrieve` `update` `delete` `update_poster` `delete_poster` `update_chart` `close` `reopen` `archive` `retrieve_hold_ttl` `update_hold_ttl` `list_ticket_releases` `update_ticket_releases` `close_ticket_release` `retrieve_report` `retrieve_log` |
 | `inventory` | `hold` `hold_best_available` `book_best_available` `extend_hold` `retrieve_hold` `release` `book` `box_office_book` `unbook` `list_bookings` `retrieve_booking` `block` `unblock` `unblock_all` `retrieve_availability` `update_availability` |
 | `channels` | `list_channels` `create_channel` `update_channel` `update_assignments` `list_allocation` `retrieve_access_preview` `retrieve_report` `pause` `unpause` `archive` `create_buyer_access_session` `list_buyer_access_sessions` `revoke_buyer_access_session` `create_access_link` `list_access_links` `rotate_access_link` `revoke_access_link` |
 | `sessions` | `create_manage_session` `revoke_manage_session` `create_designer_session` `revoke_designer_session` |
@@ -337,7 +339,7 @@ the public manifest, not just from the wrapper.
 | Node.js (server) | [`@seatlayer/server`](https://www.npmjs.com/package/@seatlayer/server) |
 | Python (server) | [`seatlayer`](https://pypi.org/project/seatlayer/) |
 | PHP (server) | [`seatlayer/seatlayer-php`](https://packagist.org/packages/seatlayer/seatlayer-php) |
-| Java (server) | [`io.seatlayer:seatlayer-java`](https://central.sonatype.com/artifact/io.seatlayer/seatlayer-java/0.1.0) |
+| Java (server) | [`io.seatlayer:seatlayer-java`](https://central.sonatype.com/artifact/io.seatlayer/seatlayer-java/0.3.0) |
 | Go (server) | [`github.com/seatlayer/seatlayer-go`](https://pkg.go.dev/github.com/seatlayer/seatlayer-go) |
 | .NET (server) | [`SeatLayer`](https://www.nuget.org/packages/SeatLayer) |
 

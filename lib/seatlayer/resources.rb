@@ -129,6 +129,23 @@ module SeatLayer
     end
   end
 
+  # Published SeatLayer catalogue templates.
+  #
+  # Instantiation creates an independent draft chart. Publish that returned
+  # chart before creating an event from it.
+  class Templates < Resource
+    # Instantiate a public template into a new draft chart.
+    #
+    # +fields+ intentionally defaults to an empty Hash: the API requires a JSON
+    # object even when there are no overrides, and JSON.generate({}) is `{}`.
+    def instantiate_template(template_id, fields: {}, idempotency_key: nil)
+      @client.post(
+        "/v1/templates/#{encode(template_id)}/instantiate", fields,
+        idempotency_key: idempotency_key, retry_policy: :header_replay
+      )
+    end
+  end
+
   # Event lifecycle, metadata and reports.
   class Events < Resource
     # One page of events.
@@ -223,6 +240,21 @@ module SeatLayer
     def update_hold_ttl(event_key, hold_ttl_ms)
       # +nil+ restores the event default and must remain an explicit JSON null.
       @client.post("/v1/events/#{encode(event_key)}/hold-ttl", { "holdTtlMs" => hold_ttl_ms })
+    end
+
+    def list_ticket_releases(event_key)
+      @client.get("/v1/events/#{encode(event_key)}/releases")
+    end
+
+    # Replace every ticket release for an event. This stays single-attempt: the
+    # route does not promise exact idempotent-response replay.
+    def update_ticket_releases(event_key, releases:)
+      @client.put("/v1/events/#{encode(event_key)}/releases", { "releases" => releases })
+    end
+
+    # Close one release while preserving its audit provenance.
+    def close_ticket_release(event_key, release_id)
+      @client.post("/v1/events/#{encode(event_key)}/releases/#{encode(release_id)}/close")
     end
 
     def retrieve_report(event_key)
