@@ -62,7 +62,8 @@ module SeatLayer
       URI.encode_www_form_component(segment.to_s).gsub("+", "%20")
     end
 
-    def request(method, path, query: nil, body: nil, idempotency_key: nil)
+    def request(method, path, query: nil, body: nil, raw_body: nil, content_type: nil,
+                idempotency_key: nil, retry_policy: :none)
       url = @base_url + path
       if query
         pairs = query.compact
@@ -74,56 +75,73 @@ module SeatLayer
         "Accept" => "application/json",
         "User-Agent" => "seatlayer-ruby"
       }
-      payload = nil
-      if body
-        payload = JSON.generate(body)
-        headers["Content-Type"] = "application/json"
-      end
+      payload = build_payload(body, raw_body, content_type, headers)
 
-      # Every mutation carries one. A retried POST that creates a second hold is
-      # worse than a failed POST, and the caller cannot tell from outside — so
-      # the SDK, which knows it retried, is the right place to guarantee it.
+      # Only operations with exact server-side response replay get an automatic
+      # key. A caller key on any other mutation is forwarded, but cannot opt that
+      # operation into automatic retries.
       unless %w[GET HEAD].include?(method)
-        key = idempotency_key || SecureRandom.uuid
-        self.class.validate_idempotency_key!(key)
-        headers["Idempotency-Key"] = key
+        key = idempotency_key
+        key ||= SecureRandom.uuid if retry_policy == :header_replay
+        if key
+          self.class.validate_idempotency_key!(key)
+          headers["Idempotency-Key"] = key
+        end
       end
 
-      execute(method, url, headers, payload)
+      retry_allowed = %w[GET HEAD].include?(method) || retry_policy == :header_replay
+      execute(method, url, headers, payload, retry_allowed: retry_allowed)
     end
 
     def get(path, query = nil)
       request("GET", path, query: query)
     end
 
-    def post(path, body = nil, idempotency_key: nil)
-      request("POST", path, body: body, idempotency_key: idempotency_key)
+    def post(path, body = nil, idempotency_key: nil, retry_policy: :none)
+      request("POST", path, body: body, idempotency_key: idempotency_key, retry_policy: retry_policy)
     end
 
     def put(path, body)
       request("PUT", path, body: body)
     end
 
+    def put_raw(path, raw_body, content_type: "application/octet-stream")
+      request("PUT", path, raw_body: raw_body, content_type: content_type)
+    end
+
     def patch(path, body)
       request("PATCH", path, body: body)
     end
 
-    def delete(path)
-      request("DELETE", path)
+    def delete(path, query = nil)
+      request("DELETE", path, query: query)
     end
 
     private
 
+    def build_payload(body, raw_body, content_type, headers)
+      raise ArgumentError, "body and raw_body are mutually exclusive" if !body.nil? && !raw_body.nil?
+
+      unless raw_body.nil?
+        headers["Content-Type"] = content_type || "application/octet-stream"
+        return raw_body
+      end
+      return if body.nil?
+
+      headers["Content-Type"] = "application/json"
+      JSON.generate(body)
+    end
+
     # The retry loop, extracted from #request so each piece stays readable: the
     # public method builds the call, this one decides how many times to make it.
-    def execute(method, url, headers, payload)
+    def execute(method, url, headers, payload, retry_allowed:)
       last_error = nil
 
       @max_retries.times do |attempt|
         begin
           response = send_request(method, url, headers, payload)
         rescue ConnectionError => e
-          raise e if attempt >= @max_retries - 1
+          raise e unless retry_allowed && attempt < @max_retries - 1
 
           last_error = e
           sleep(backoff(attempt, nil))
@@ -136,7 +154,7 @@ module SeatLayer
         error_body = decode_error_body(response[:body])
         retry_after = parse_retry_after(response[:headers], error_body)
 
-        if retryable?(status) && attempt < @max_retries - 1
+        if retry_allowed && retryable?(status) && attempt < @max_retries - 1
           sleep(backoff(attempt, status == 429 ? retry_after : nil))
           next
         end

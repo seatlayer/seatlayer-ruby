@@ -62,8 +62,13 @@ module SeatLayer
     # the checkout window — invoiced sales, a phone order on hold. Releasing
     # first hands the seats to whoever is racing for them in between. A hold that
     # is gone, expired, or at its renewal cap answers 409 +cannot_extend+.
-    def extend_hold(event_key, hold_id, ttl_ms: nil)
-      @client.post(path(event_key, "/extend"), compact({ "holdId" => hold_id, "ttlMs" => ttl_ms }))
+    def extend_hold(event_key, hold_id, ttl_ms: nil, channel_ids: nil,
+                    ignore_channel_restrictions: nil, reason: nil)
+      body = compact({ "holdId" => hold_id, "ttlMs" => ttl_ms,
+                       "channelIds" => channel_ids,
+                       "ignoreChannelRestrictions" => ignore_channel_restrictions,
+                       "reason" => reason })
+      @client.post(path(event_key, "/extend"), body)
     end
 
     # Authoritative items and prices. Charge from this, not the browser.
@@ -98,8 +103,9 @@ module SeatLayer
     end
 
     # Hold inventory back from sale (house seats, production holds).
-    def block(event_key, labels:)
-      @client.post(path(event_key, "/block"), { "labels" => labels })
+    def block(event_key, labels:, release_at: nil)
+      @client.post(path(event_key, "/block"),
+                   compact({ "labels" => labels, "releaseAt" => release_at }))
     end
 
     def unblock(event_key, labels:)
@@ -147,24 +153,29 @@ module SeatLayer
   # The governing rule: the SDK mints tokens, widgets consume them. Your secret
   # key never reaches a browser.
   class Sessions < Resource
-    CAPABILITIES = ["event:view", "event:block", "event:cancel", "event:reports"].freeze
+    CAPABILITIES = [
+      "event:view", "event:block", "event:cancel", "event:reports",
+      "event:channels:view", "event:channels:manage", "event:orders:read",
+      "event:refund", "event:tickets:send", "event:door:view",
+      "event:door:checkin", "event:boxoffice"
+    ].freeze
 
     # Mint a manage-session token for the control room.
     #
-    # +capabilities+ is required here even though the API defaults it. That
-    # default grants all four — including event:cancel, which un-books paid
-    # inventory. Granting the ability to reverse sales by forgetting an argument
-    # is not a default worth inheriting.
-    def create_manage_session(event_key, allowed_origin:, capabilities:, expires_in_seconds: nil)
+    # The raw API defaults an omitted list to view-only (+event:view+). This SDK
+    # still requires an explicit set so browser authority is visible at each call.
+    def create_manage_session(event_key, allowed_origin:, capabilities:, expires_in_seconds: nil,
+                              workspace_id: nil)
       if capabilities.nil? || capabilities.empty?
         raise ArgumentError,
-              "capabilities is required: pass the smallest set the page needs, e.g. " \
-              '["event:view"]. Omitting it server-side grants event:cancel, ' \
-              "which can reverse paid bookings."
+              'capabilities is required: pass the smallest set the page needs, e.g. ["event:view"].'
       end
+      unknown = capabilities - CAPABILITIES
+      raise ArgumentError, "unsupported manage capabilities: #{unknown.join(", ")}" unless unknown.empty?
 
       body = compact({ "allowedOrigin" => allowed_origin, "capabilities" => capabilities,
-                       "expiresInSeconds" => expires_in_seconds })
+                       "expiresInSeconds" => expires_in_seconds,
+                       "workspaceId" => workspace_id })
       @client.post("/v1/events/#{encode(event_key)}/manage-sessions", body)
     end
 
@@ -174,13 +185,19 @@ module SeatLayer
 
     # Mint a designer token so an organiser can edit a chart inside your own UI.
     # Requires a chart id that already exists — create or copy one first.
+    # Explicit keywords keep each security and feature-policy boundary visible.
+    # rubocop:disable Metrics/ParameterLists
     def create_designer_session(workspace_id:, chart_id:, allowed_origin:,
-                                authority: nil, mode: nil, expires_in_seconds: nil)
+                                authority: nil, can_publish: nil, mode: nil,
+                                safe_mode_options: nil, features: nil, expires_in_seconds: nil)
       body = compact({ "workspaceId" => workspace_id, "chartId" => chart_id,
                        "allowedOrigin" => allowed_origin, "authority" => authority,
-                       "mode" => mode, "expiresInSeconds" => expires_in_seconds })
+                       "canPublish" => can_publish, "mode" => mode,
+                       "safeModeOptions" => safe_mode_options, "features" => features,
+                       "expiresInSeconds" => expires_in_seconds })
       @client.post("/v1/designer/sessions", body)
     end
+    # rubocop:enable Metrics/ParameterLists
 
     def revoke_designer_session(session_id)
       @client.delete("/v1/designer/sessions/#{encode(session_id)}")
@@ -189,15 +206,23 @@ module SeatLayer
 
   # Manage webhook subscriptions. To VERIFY a delivery, see SeatLayer::Webhook.
   class Webhooks < Resource
+    EVENT_NAMES = [
+      "seat.booked", "seat.released", "seat.blocked", "hold.expired",
+      "hold.created", "hold.extended", "event.created", "event.soldout"
+    ].freeze
+
     def list
       @client.get("/v1/webhooks")
     end
 
     def create(url:, events:)
+      validate_events!(events)
       @client.post("/v1/webhooks", { "url" => url, "events" => events })
     end
 
-    def update(webhook_id, fields)
+    def update(webhook_id, url: nil, events: nil, disabled: nil)
+      validate_events!(events) unless events.nil?
+      fields = compact({ "url" => url, "events" => events, "disabled" => disabled })
       @client.patch("/v1/webhooks/#{encode(webhook_id)}", fields)
     end
 
@@ -205,8 +230,20 @@ module SeatLayer
       @client.delete("/v1/webhooks/#{encode(webhook_id)}")
     end
 
-    def list_deliveries(webhook_id)
-      @client.get("/v1/webhooks/#{encode(webhook_id)}/deliveries")
+    def list_deliveries(webhook_id, limit: nil, status: nil, before: nil)
+      raise ArgumentError, "status must be ok or failed" unless status.nil? || %w[ok failed].include?(status)
+
+      query = compact({ "limit" => limit, "status" => status, "before" => before })
+      @client.get("/v1/webhooks/#{encode(webhook_id)}/deliveries", query)
+    end
+
+    private
+
+    def validate_events!(events)
+      unknown = Array(events) - EVENT_NAMES
+      return if !Array(events).empty? && unknown.empty?
+
+      raise ArgumentError, "events must contain only supported SeatLayer webhook event names"
     end
   end
 
@@ -216,9 +253,12 @@ module SeatLayer
       @client.get("/v1/workspaces")
     end
 
-    def create(name:, external_ref: nil, idempotency_key: nil)
-      body = compact({ "name" => name, "externalRef" => external_ref })
-      @client.post("/v1/workspaces", body, idempotency_key: idempotency_key)
+    def create(name:, external_ref: UNSET, idempotency_key: nil)
+      body = { "name" => name }
+      body.merge!(supplied({ "externalRef" => external_ref }))
+      @client.post(
+        "/v1/workspaces", body, idempotency_key: idempotency_key, retry_policy: :header_replay
+      )
     end
 
     def retrieve(workspace_id)

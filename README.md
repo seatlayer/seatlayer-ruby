@@ -43,6 +43,9 @@ held = client.inventory.hold_best_available(event["key"], qty: 4)
 client.inventory.book(event["key"], hold_id: held["holdId"], booking_ref: "order-8842")
 ```
 
+Nullable event-create fields distinguish omission from an explicit reset: passing, for example,
+`venue: nil` sends JSON `null`; leaving `venue` out sends no field.
+
 ## Test vs live
 
 Keys carry their own mode. `sk_test_…` keys can only touch test-mode events and `sk_live_…` only
@@ -155,11 +158,9 @@ session = client.sessions.create_manage_session(
 )
 ```
 
-`capabilities` is **required** by this SDK even though the API defaults it. Omit it at the API level
-and you get `event:view`, `event:block`, `event:cancel` and `event:reports` — including
-`event:cancel`, which unbooks paid seats **and authorises refunds against the organiser's connected
-payment gateway**. That is real money, moved by a token you handed to a browser; it should not
-arrive by forgetting an argument. Grant the smallest set the page needs.
+`capabilities` is **required** by this SDK even though the raw API safely defaults an omitted list
+to view-only (`event:view`). Keeping the argument required makes browser authority visible at every
+call site. Grant the smallest set the page needs.
 
 The full set, all opt-in:
 
@@ -171,12 +172,26 @@ The full set, all opt-in:
 | `event:reports` | Read sales and availability reports |
 | `event:channels:view` | Read sales channels and their allocations |
 | `event:channels:manage` | Create, pause and archive channels; rotate access links |
+| `event:orders:read` | Read SeatLayer-managed orders |
+| `event:refund` | Refund a SeatLayer-managed order |
+| `event:tickets:send` | Send SeatLayer-managed tickets |
+| `event:door:view` | Read the door list |
+| `event:door:checkin` | Check tickets in and out |
+| `event:boxoffice` | Use the managed box-office surface |
 
 The two `event:channels:*` capabilities are **not** in the default — a token minted before sales
 channels existed must not silently acquire channel authority — so ask for them explicitly if the
 page manages channels.
 
+Designer minting returns the API envelope unchanged: read the token and effective safe-mode and
+feature policy under `result["session"]`. Pass `safe_mode_options` only with `mode: "safe"`.
+
 ## Webhooks
+
+Subscription responses use the wire envelopes exactly: `list` returns `{"subs" => [...]}`,
+`create` returns `{"sub" => ..., "secret" => ...}` (the secret is shown once), and `update`
+returns `{"sub" => ...}`. `SeatLayer::Webhooks::EVENT_NAMES` is the exact eight-name event set;
+delivery history accepts `limit`, `status` (`"ok"` or `"failed"`), and `before`.
 
 Verify every delivery against the **raw** body. Re-encoding a parsed Hash changes the bytes and
 verification will fail.
@@ -236,15 +251,20 @@ error carries `status`, `code`, `body` and `request_id` — quote the request id
 
 ## Reliability
 
-**Retries.** 429, 408 and 5xx are retried with exponential backoff and full jitter; `Retry-After`
-wins when the server sends it. 4xx is never retried — it will not start succeeding.
+**Retries.** Reads (`GET`/`HEAD`) retry 429, 408 and 5xx with exponential backoff and full jitter;
+`Retry-After` wins when the server sends it. Automatic mutation retries are limited to the four
+operations backed by exact response replay: `charts.create`, `charts.copy`, `events.create`, and
+`workspaces.create`. Other 4xx responses are never retried.
 
-**Idempotency.** Every mutating request carries an `Idempotency-Key`, generated if you do not supply
-one, and **reused across retries** so a retried booking cannot become two bookings. Pass your own
-order id for end-to-end deduplication:
+**Idempotency.** Those four replay-backed operations carry an `Idempotency-Key`, generated when you
+do not supply one and reused across attempts. Other mutations are single-attempt and receive no
+automatic key. A caller-supplied key is forwarded but does not enable retries. This includes
+inventory holds and bookings, show-once credential or secret creation, unsupported operations, and
+raw `request` mutations. Keep `booking_ref` in the booking body for reconciliation, but handle an
+unknown network outcome explicitly instead of automatically repeating the sale.
 
 ```ruby
-client.inventory.book(event_key, hold_id: hold_id, idempotency_key: "order-#{order_id}")
+client.events.create(chart_id: chart_id, idempotency_key: "provision-event-#{event_id}")
 ```
 
 ```ruby
@@ -257,7 +277,8 @@ SeatLayer::Client.new(
 
 ## Escape hatch
 
-For surface this SDK does not wrap yet — same auth, retries, idempotency and error mapping:
+For surface this SDK does not wrap yet, `request` keeps auth and error mapping. Raw reads retain the
+read retry policy; raw mutations are always single-attempt because their replay contract is unknown:
 
 ```ruby
 client.request("POST", "/v1/events/ev_1/some-new-route", body: { "qty" => 2 })
@@ -268,9 +289,9 @@ client.request("POST", "/v1/events/ev_1/some-new-route", body: { "qty" => 2 })
 | Resource | Methods |
 | --- | --- |
 | `charts` | `list` `list_all` `create` `retrieve` `update` `delete` `copy` `archive` `unarchive` `publish` |
-| `events` | `list` `list_all` `create` `retrieve` `update` `delete` `update_chart` `close` `reopen` `archive` `retrieve_hold_ttl` `update_hold_ttl` `retrieve_report` `retrieve_log` |
+| `events` | `list` `list_all` `create` `retrieve` `update` `delete` `update_poster` `delete_poster` `update_chart` `close` `reopen` `archive` `retrieve_hold_ttl` `update_hold_ttl` `retrieve_report` `retrieve_log` |
 | `inventory` | `hold` `hold_best_available` `book_best_available` `extend_hold` `retrieve_hold` `release` `book` `box_office_book` `unbook` `list_bookings` `retrieve_booking` `block` `unblock` `unblock_all` `retrieve_availability` `update_availability` |
-| `channels` | `list_channels` `create_channel` `update_channel` `update_assignments` `list_allocation` `retrieve_access_preview` `retrieve_report` `pause` `unpause` `archive` `create_buyer_access_session` `list_buyer_access_sessions` `revoke_buyer_access_session` |
+| `channels` | `list_channels` `create_channel` `update_channel` `update_assignments` `list_allocation` `retrieve_access_preview` `retrieve_report` `pause` `unpause` `archive` `create_buyer_access_session` `list_buyer_access_sessions` `revoke_buyer_access_session` `create_access_link` `list_access_links` `rotate_access_link` `revoke_access_link` |
 | `sessions` | `create_manage_session` `revoke_manage_session` `create_designer_session` `revoke_designer_session` |
 | `webhooks` | `list` `create` `update` `delete` `list_deliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |

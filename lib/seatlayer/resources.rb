@@ -3,6 +3,8 @@
 module SeatLayer
   # Shared plumbing for the resource namespaces.
   class Resource
+    UNSET = Object.new.freeze
+
     def initialize(client)
       @client = client
     end
@@ -13,6 +15,11 @@ module SeatLayer
     # rather than being sent as explicit JSON null.
     def compact(hash)
       hash.compact
+    end
+
+    # Drop only the private sentinel, preserving nil as explicit JSON null.
+    def supplied(hash)
+      hash.reject { |_key, value| value.equal?(UNSET) }
     end
 
     def encode(segment)
@@ -58,14 +65,16 @@ module SeatLayer
     def create(name:, doc: nil, external_ref: nil, workspace_id: nil, idempotency_key: nil)
       body = compact({ "name" => name, "doc" => doc,
                        "externalRef" => external_ref, "workspaceId" => workspace_id })
-      @client.post("/v1/charts", body, idempotency_key: idempotency_key)
+      @client.post(
+        "/v1/charts", body, idempotency_key: idempotency_key, retry_policy: :header_replay
+      )
     end
 
     def retrieve(chart_id)
       @client.get("/v1/charts/#{encode(chart_id)}")
     end
 
-    # Replace a chart document.
+    # Replace a chart document or update metadata only.
     #
     # +expected_updated_at+ is required for optimistic concurrency and is not
     # optional here either: without it two concurrent writers silently overwrite
@@ -74,8 +83,20 @@ module SeatLayer
     #
     # The Designer is the authoring surface. Use this for bulk programmatic edits
     # and migrations, not for drawing.
-    def update(chart_id, doc:, expected_updated_at:, name: nil)
-      body = compact({ "doc" => doc, "expectedUpdatedAt" => expected_updated_at, "name" => name })
+    def update(chart_id, doc: UNSET, expected_updated_at: UNSET, name: nil, issues: nil,
+               external_ref: UNSET)
+      doc_supplied = !doc.equal?(UNSET)
+      expected_supplied = !expected_updated_at.equal?(UNSET)
+      unless doc_supplied == expected_supplied
+        raise ArgumentError, "doc and expected_updated_at must be supplied together"
+      end
+
+      body = compact({ "name" => name, "issues" => issues })
+      if doc_supplied
+        body["doc"] = doc
+        body["expectedUpdatedAt"] = expected_updated_at
+      end
+      body.merge!(supplied({ "externalRef" => external_ref }))
       @client.put("/v1/charts/#{encode(chart_id)}", body)
     end
 
@@ -84,8 +105,14 @@ module SeatLayer
     end
 
     # Copy a chart — the usual way to provision a venue from a template.
-    def copy(chart_id, idempotency_key: nil)
-      @client.post("/v1/charts/#{encode(chart_id)}/duplicate", nil, idempotency_key: idempotency_key)
+    def copy(chart_id, idempotency_key: nil, name: nil, external_ref: UNSET,
+             workspace_id: nil)
+      body = compact({ "name" => name, "workspaceId" => workspace_id })
+      body.merge!(supplied({ "externalRef" => external_ref }))
+      @client.post(
+        "/v1/charts/#{encode(chart_id)}/duplicate", body.empty? ? nil : body,
+        idempotency_key: idempotency_key, retry_policy: :header_replay
+      )
     end
 
     def archive(chart_id)
@@ -131,13 +158,22 @@ module SeatLayer
       end
     end
 
-    def create(chart_id:, name: nil, slug: nil, starts_at: nil, venue: nil,
-               external_ref: nil, currency: nil, idempotency_key: nil)
-      body = compact({ "chartId" => chart_id, "name" => name, "slug" => slug,
-                       "startsAt" => starts_at, "venue" => venue,
-                       "externalRef" => external_ref, "currency" => currency })
-      @client.post("/v1/events", body, idempotency_key: idempotency_key)
+    # rubocop:disable Metrics/ParameterLists
+    def create(chart_id:, name: nil, slug: nil, starts_at: UNSET, venue: UNSET,
+               external_ref: UNSET, currency: UNSET, idempotency_key: nil,
+               description: UNSET, ends_at: UNSET, timezone: UNSET, locale: UNSET,
+               poster_asset_id: UNSET, mode: nil)
+      body = compact({ "chartId" => chart_id, "name" => name, "slug" => slug, "mode" => mode })
+      body.merge!(supplied({ "startsAt" => starts_at, "venue" => venue,
+                             "externalRef" => external_ref, "currency" => currency,
+                             "description" => description, "endsAt" => ends_at,
+                             "timezone" => timezone, "locale" => locale,
+                             "posterAssetId" => poster_asset_id }))
+      @client.post(
+        "/v1/events", body, idempotency_key: idempotency_key, retry_policy: :header_replay
+      )
     end
+    # rubocop:enable Metrics/ParameterLists
 
     def retrieve(event_key)
       @client.get("/v1/events/#{encode(event_key)}")
@@ -151,9 +187,20 @@ module SeatLayer
       @client.delete("/v1/events/#{encode(event_key)}")
     end
 
+    # Upload raw PNG, JPEG, or WebP bytes (maximum 5 MiB).
+    def update_poster(event_key, image, content_type: "application/octet-stream")
+      @client.put_raw("/v1/events/#{encode(event_key)}/poster", image, content_type: content_type)
+    end
+
+    def delete_poster(event_key)
+      @client.delete("/v1/events/#{encode(event_key)}/poster")
+    end
+
     # Move a live event onto the latest published version of its chart.
-    def update_chart(event_key)
-      @client.post("/v1/events/#{encode(event_key)}/update-chart")
+    def update_chart(event_key, acknowledge_dropped_assignments: nil, reason: nil)
+      body = compact({ "acknowledgeDroppedAssignments" => acknowledge_dropped_assignments,
+                       "reason" => reason })
+      @client.post("/v1/events/#{encode(event_key)}/update-chart", body)
     end
 
     # Stop buyer sales. Existing holds keep their TTL.
@@ -174,6 +221,7 @@ module SeatLayer
     end
 
     def update_hold_ttl(event_key, hold_ttl_ms)
+      # +nil+ restores the event default and must remain an explicit JSON null.
       @client.post("/v1/events/#{encode(event_key)}/hold-ttl", { "holdTtlMs" => hold_ttl_ms })
     end
 
@@ -181,8 +229,9 @@ module SeatLayer
       @client.get("/v1/events/#{encode(event_key)}/report")
     end
 
-    def retrieve_log(event_key)
-      @client.get("/v1/events/#{encode(event_key)}/log")
+    def retrieve_log(event_key, limit: nil, before: nil)
+      @client.get("/v1/events/#{encode(event_key)}/log",
+                  compact({ "limit" => limit, "before" => before }))
     end
   end
 end

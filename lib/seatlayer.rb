@@ -46,10 +46,12 @@ module SeatLayer
       @http.get("/health/ready")
     end
 
-    # Escape hatch for surface this SDK does not wrap yet. Carries the same auth,
-    # retries, idempotency and error mapping.
-    def request(method, path, query: nil, body: nil, idempotency_key: nil)
-      @http.request(method, path, query: query, body: body, idempotency_key: idempotency_key)
+    # Escape hatch for surface this SDK does not wrap yet. Reads retain retries;
+    # raw mutations are single-attempt because their replay contract is unknown.
+    def request(method, path, query: nil, body: nil, raw_body: nil, content_type: nil,
+                idempotency_key: nil)
+      @http.request(method, path, query: query, body: body, raw_body: raw_body,
+                                  content_type: content_type, idempotency_key: idempotency_key)
     end
   end
 end

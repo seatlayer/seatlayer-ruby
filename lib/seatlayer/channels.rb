@@ -65,24 +65,62 @@ module SeatLayer
     # Explicit keywords document each security boundary carried by the token.
     # rubocop:disable Metrics/ParameterLists
     def create_buyer_access_session(event_key, include_public:, allowed_origin:, channel_ids: nil,
-                                    expires_in_seconds: nil, max_quantity: nil, buyer_ref: nil,
-                                    partner_ref: nil, client_request_id: nil, idempotency_key: nil)
+                                    expires_in_seconds: nil, max_quantity: UNSET, buyer_ref: UNSET,
+                                    partner_ref: UNSET, client_request_id: UNSET, idempotency_key: nil)
       body = compact({ "channelIds" => channel_ids, "includePublic" => include_public,
-                       "allowedOrigin" => allowed_origin, "expiresInSeconds" => expires_in_seconds,
-                       "maxQuantity" => max_quantity, "buyerRef" => buyer_ref,
-                       "partnerRef" => partner_ref, "clientRequestId" => client_request_id })
+                       "allowedOrigin" => allowed_origin, "expiresInSeconds" => expires_in_seconds })
+      body.merge!(supplied({ "maxQuantity" => max_quantity, "buyerRef" => buyer_ref,
+                             "partnerRef" => partner_ref,
+                             "clientRequestId" => client_request_id }))
       @client.post("/v1/events/#{encode(event_key)}/buyer-access-sessions", body,
                    idempotency_key: idempotency_key)
     end
     # rubocop:enable Metrics/ParameterLists
 
-    def list_buyer_access_sessions(event_key, state: nil, limit: nil, cursor: nil)
+    def list_buyer_access_sessions(event_key, limit: nil)
       @client.get("/v1/events/#{encode(event_key)}/buyer-access-sessions",
-                  compact({ "state" => state, "limit" => limit, "cursor" => cursor }))
+                  compact({ "limit" => limit }))
     end
 
     def revoke_buyer_access_session(event_key, session_id)
       @client.delete("/v1/events/#{encode(event_key)}/buyer-access-sessions/#{encode(session_id)}")
+    end
+
+    # The URL and capability in this response are revealed once. Persist them
+    # immediately; this mutation is deliberately never retried automatically.
+    # rubocop:disable Metrics/ParameterLists
+    def create_access_link(event_key, channel_id, label: UNSET, expires_at: nil,
+                           max_redemptions: nil, max_quantity: nil,
+                           session_ttl_seconds: nil, include_public: nil, reason: nil,
+                           idempotency_key: nil)
+      body = compact({ "expiresAt" => expires_at, "maxRedemptions" => max_redemptions,
+                       "maxQuantity" => max_quantity,
+                       "sessionTtlSeconds" => session_ttl_seconds,
+                       "includePublic" => include_public, "reason" => reason })
+      body.merge!(supplied({ "label" => label }))
+      @client.post(path(event_key, "/#{encode(channel_id)}/access-links"), body,
+                   idempotency_key: idempotency_key)
+    end
+    # rubocop:enable Metrics/ParameterLists
+
+    # Status only: the API never returns a previously revealed capability.
+    def list_access_links(event_key, channel_id)
+      @client.get(path(event_key, "/#{encode(channel_id)}/access-links"))
+    end
+
+    def rotate_access_link(event_key, channel_id, link_id, end_active_sessions:, reason: nil)
+      body = compact({ "endActiveSessions" => end_active_sessions, "reason" => reason })
+      @client.post(
+        path(event_key, "/#{encode(channel_id)}/access-links/#{encode(link_id)}/rotate"), body
+      )
+    end
+
+    def revoke_access_link(event_key, channel_id, link_id, end_active_sessions: false, reason: nil)
+      query = compact({ "endActiveSessions" => end_active_sessions ? "1" : nil,
+                        "reason" => reason })
+      @client.delete(
+        path(event_key, "/#{encode(channel_id)}/access-links/#{encode(link_id)}"), query
+      )
     end
 
     private
