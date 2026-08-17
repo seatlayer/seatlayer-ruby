@@ -430,6 +430,46 @@ RSpec.describe SeatLayer::Client do
   end
 
   describe "generated public wire contract" do
+    it "instantiates templates with an empty object and exact-response replay" do
+      client, transport = build_client([
+                                         { status: 429, body: '{"error":"rate_limited"}',
+                                           headers: { "retry-after" => "0" } },
+                                         { status: 201, body: '{"meta":{"id":"c_1"}}' }
+                                       ])
+      client.templates.instantiate_template("arena/standard")
+
+      expect(transport.calls).to have_attributes(length: 2)
+      expect(transport.calls[0].url).to end_with("/v1/templates/arena%2Fstandard/instantiate")
+      expect(transport.calls[0].body).to eq("{}")
+      expect(transport.calls[0].headers["Idempotency-Key"])
+        .to eq(transport.calls[1].headers["Idempotency-Key"])
+    end
+
+    it "wraps ticket release routes with replacement bodies and single-attempt writes" do
+      client, transport = build_client([
+                                         { status: 200, body: '{"releases":[]}' },
+                                         { status: 200, body: '{"releases":[]}' },
+                                         { status: 429, body: '{"error":"rate_limited"}',
+                                           headers: { "retry-after" => "0" } }
+                                       ])
+      client.events.list_ticket_releases("ev/1")
+      client.events.update_ticket_releases(
+        "ev/1", releases: [{ "id" => "rel_1", "name" => "Early", "price" => 2500, "action" => "buy" }]
+      )
+
+      expect { client.events.close_ticket_release("ev/1", "rel/1") }
+        .to raise_error(SeatLayer::RateLimitError)
+
+      expect(transport.calls).to have_attributes(length: 3)
+      expect(transport.calls[0].http_method).to eq("GET")
+      expect(transport.calls[0].url).to end_with("/v1/events/ev%2F1/releases")
+      expect(JSON.parse(transport.calls[1].body)).to eq(
+        "releases" => [{ "id" => "rel_1", "name" => "Early", "price" => 2500, "action" => "buy" }]
+      )
+      expect(transport.calls[2].url).to end_with("/v1/events/ev%2F1/releases/rel%2F1/close")
+      expect(transport.calls[2].headers).not_to have_key("Idempotency-Key")
+    end
+
     it "sends the expanded event, hold, and block fields" do
       client, transport = build_client([
                                          { status: 201, body: '{"meta":{"key":"ev_1"}}' },

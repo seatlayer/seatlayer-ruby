@@ -19,7 +19,7 @@ require_relative "seatlayer/webhook"
 module SeatLayer
   # The SeatLayer client.
   class Client
-    attr_reader :charts, :events, :inventory, :channels, :sessions, :webhooks, :workspaces
+    attr_reader :charts, :events, :inventory, :channels, :sessions, :webhooks, :workspaces, :templates
 
     def initialize(secret_key, base_url: HTTPClient::DEFAULT_BASE_URL,
                    max_retries: HTTPClient::DEFAULT_MAX_RETRIES,
@@ -32,6 +32,7 @@ module SeatLayer
       @inventory = Inventory.new(@http)
       @channels = Channels.new(@http)
       @sessions = Sessions.new(@http)
+      @templates = Templates.new(@http)
       @webhooks = Webhooks.new(@http)
       @workspaces = Workspaces.new(@http)
     end
