@@ -80,6 +80,71 @@ RSpec.describe SeatLayer::Client do
       body = JSON.parse(transport.calls[0].body)
       expect(body.keys).to eq(["chartId"])
     end
+
+    it "maps the complete trusted performance-groups workflow" do
+      client, transport = build_client([
+                                         { status: 200, body: '{"performanceGroups":[]}' },
+                                         { status: 201, body: '{"performanceGroup":{"key":"pg_1"}}' },
+                                         { status: 200, body: '{"performanceGroup":{"key":"pg_1"}}' },
+                                         { status: 204 },
+                                         { status: 202,
+                                           body: '{"lifecycleOperation":{"operationId":"op_a"}}' },
+                                         { status: 202,
+                                           body: '{"lifecycleOperation":{"operationId":"op_c"}}' },
+                                         { status: 200,
+                                           body: '{"lifecycleOperation":{"operationId":"op_a"}}' },
+                                         { status: 201, body: '{"buyerAccessSession":{"token":"one_time"}}' },
+                                         { status: 200, body: '{"buyerAccessSessions":[]}' },
+                                         { status: 200, body: '{"buyerAccessSession":{"id":"bas_1"}}' },
+                                         { status: 200, body: '{"hold":{"operationId":"hold_1"}}' },
+                                         { status: 202, body: '{"booking":{"actionId":"book_1"}}' },
+                                         { status: 200, body: '{"booking":{"actionId":"book_1"}}' }
+                                       ])
+      groups = client.performance_groups
+
+      groups.list(workspace_id: "ws_1", external_ref: "bundle-42", state: "active", limit: 5,
+                  cursor: "next_1")
+      groups.create(name: "Three-night run", event_keys: %w[ev_1 ev_2], external_ref: "bundle-42")
+      groups.retrieve("pg/a")
+      groups.delete("pg/a")
+      groups.activate("pg/a", expected_revision: 3)
+      groups.close("pg/a", expected_revision: 4)
+      groups.retrieve_lifecycle("pg/a", "op/activate")
+      groups.create_buyer_access_session(
+        "pg/a", allowed_origin: "https://tickets.example", include_public: false,
+                channel_ids_by_event: { "ev_1" => ["ch_1"] }, expires_in_seconds: 600,
+                max_quantity: 4, buyer_ref: "buyer_1", partner_ref: nil
+      )
+      groups.list_buyer_access_sessions("pg/a", limit: 10)
+      groups.revoke_buyer_access_session("pg/a", "bas/1")
+      groups.retrieve_hold("pg/a", "hold/1")
+      groups.book_hold("pg/a", "hold/1", book_action_id: "book/1", booking_ref: "order-9")
+      groups.retrieve_booking("pg/a", "book/1")
+
+      expect(transport.calls[0].url).to eq(
+        "https://api.seatlayer.io/v1/performance-groups?workspaceId=ws_1&externalRef=bundle-42&state=active&limit=5&cursor=next_1"
+      )
+      expect(transport.calls[1].headers["Idempotency-Key"])
+        .to match(/\A[A-Za-z0-9._:-]{1,128}\z/)
+      expect(transport.calls[2].url).to end_with("/v1/performance-groups/pg%2Fa")
+      expect(transport.calls[3].http_method).to eq("DELETE")
+      expect(transport.calls[4].body).to eq('{"expectedRevision":3}')
+      expect(transport.calls[5].body).to eq('{"expectedRevision":4}')
+      expect(transport.calls[6].url).to end_with("/lifecycle/op%2Factivate")
+      expect(transport.calls[7].headers).not_to have_key("Idempotency-Key")
+      expect(JSON.parse(transport.calls[7].body)).to include(
+        "includePublic" => false, "maxQuantity" => 4, "partnerRef" => nil
+      )
+      expect(transport.calls[8].url).to end_with("/buyer-access-sessions?limit=10")
+      expect(transport.calls[9].url).to end_with("/buyer-access-sessions/bas%2F1")
+      expect(transport.calls[10].url).to end_with("/holds/hold%2F1")
+      expect(transport.calls[11].headers).not_to have_key("Idempotency-Key")
+      expect(transport.calls[11].url).to end_with("/holds/hold%2F1/book")
+      expect(JSON.parse(transport.calls[11].body)).to eq(
+        "bookActionId" => "book/1", "bookingRef" => "order-9"
+      )
+      expect(transport.calls[12].url).to end_with("/bookings/book%2F1")
+    end
   end
 
   describe "errors" do
