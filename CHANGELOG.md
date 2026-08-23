@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added exact immutable Event configuration binding reads and compare-and-set
+  attach/detach through `events.retrieve_configuration_binding` and
+  `events.update_configuration_binding`. Updates remain deliberately single-attempt.
+
 - Added `templates.instantiate_template` and the ticket-release lifecycle on
   `events` (`list_ticket_releases`, `update_ticket_releases`, and
   `close_ticket_release`). Template instantiation sends `{}` when no overrides

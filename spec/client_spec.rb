@@ -470,6 +470,61 @@ RSpec.describe SeatLayer::Client do
       expect(transport.calls[2].headers).not_to have_key("Idempotency-Key")
     end
 
+    it "reads, attaches, and explicitly detaches an Event configuration" do
+      binding = {
+        "configuration" => { "id" => "ec_touring", "version" => 3 },
+        "revision" => 7, "changedBy" => "api-key:key_1", "changedAt" => 123,
+        "audit" => [{ "id" => "eca_1", "from" => nil,
+                      "to" => { "id" => "ec_touring", "version" => 3 },
+                      "revision" => 7, "actor" => "api-key:key_1", "createdAt" => 123 }]
+      }
+      detached_body = '{"configuration":null,"revision":8,' \
+                      '"changedBy":null,"changedAt":null,"audit":[]}'
+      client, transport = build_client([
+                                         { status: 200, body: JSON.generate(binding) },
+                                         { status: 200, body: JSON.generate(binding) },
+                                         { status: 200, body: detached_body }
+                                       ])
+
+      retrieved = client.events.retrieve_configuration_binding("ev / main")
+      attached = client.events.update_configuration_binding(
+        "ev / main", expected_revision: 6,
+                     configuration: { "id" => "ec_touring", "version" => 3 }
+      )
+      detached = client.events.update_configuration_binding(
+        "ev / main", expected_revision: 7, configuration: nil
+      )
+
+      expect(retrieved.fetch("audit").first.fetch("from")).to be_nil
+      expect(attached.dig("configuration", "id")).to eq("ec_touring")
+      expect(detached.fetch("configuration")).to be_nil
+      expect(transport.calls.map(&:url)).to all(
+        end_with("/v1/events/ev%20%2F%20main/event-configuration")
+      )
+      expect(transport.calls.map(&:http_method)).to eq(%w[GET PUT PUT])
+      expect(JSON.parse(transport.calls[1].body)).to eq(
+        "expectedRevision" => 6,
+        "configuration" => { "id" => "ec_touring", "version" => 3 }
+      )
+      expect(JSON.parse(transport.calls[2].body)).to eq(
+        "expectedRevision" => 7, "configuration" => nil
+      )
+      expect(transport.calls[1].headers).not_to have_key("Idempotency-Key")
+      expect(transport.calls[2].headers).not_to have_key("Idempotency-Key")
+
+      retry_client, retry_transport = build_client([
+                                                     { status: 429,
+                                                       body: '{"error":"rate_limited"}',
+                                                       headers: { "retry-after" => "0" } }
+                                                   ])
+      expect do
+        retry_client.events.update_configuration_binding(
+          "ev_1", expected_revision: 1, configuration: nil
+        )
+      end.to raise_error(SeatLayer::RateLimitError)
+      expect(retry_transport.calls.length).to eq(1)
+    end
+
     it "sends the expanded event, hold, and block fields" do
       client, transport = build_client([
                                          { status: 201, body: '{"meta":{"key":"ev_1"}}' },

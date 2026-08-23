@@ -196,6 +196,21 @@ module SeatLayer
       @client.get("/v1/events/#{encode(event_key)}")
     end
 
+    # Read the Event's exact immutable configuration selection and audit trail.
+    def retrieve_configuration_binding(event_key)
+      @client.get("/v1/events/#{encode(event_key)}/event-configuration")
+    end
+
+    # Attach an exact published configuration version, or pass +nil+ to detach.
+    # The expected revision prevents one administrator from silently overwriting
+    # another, and the mutation remains deliberately single-attempt.
+    def update_configuration_binding(event_key, expected_revision:, configuration:)
+      @client.put(
+        "/v1/events/#{encode(event_key)}/event-configuration",
+        { "expectedRevision" => expected_revision, "configuration" => configuration }
+      )
+    end
+
     def update(event_key, fields)
       @client.patch("/v1/events/#{encode(event_key)}", fields)
     end
