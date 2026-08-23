@@ -6,6 +6,14 @@
   attach/detach through `events.retrieve_configuration_binding` and
   `events.update_configuration_binding`. Updates remain deliberately single-attempt.
 
+## 0.5.0 — 2026-08-21
+
+- Added `performance_groups`, the trusted server resource for fixed two-to-eight
+  performance runs. It creates and activates groups, mints one-time browser
+  access, retrieves authoritative group holds, and confirms bookings with
+  stable action and order references. Browser-only group routes remain outside
+  this secret-key SDK.
+
 - Added `templates.instantiate_template` and the ticket-release lifecycle on
   `events` (`list_ticket_releases`, `update_ticket_releases`, and
   `close_ticket_release`). Template instantiation sends `{}` when no overrides
