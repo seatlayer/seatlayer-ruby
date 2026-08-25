@@ -186,7 +186,7 @@ module SeatLayer
     # Mint a designer token so an organiser can edit a chart inside your own UI.
     # Requires a chart id that already exists — create or copy one first.
     # Explicit keywords keep each security and feature-policy boundary visible.
-    # rubocop:disable Metrics/ParameterLists
+    # rubocop:disable-next Metrics/ParameterLists
     def create_designer_session(workspace_id:, chart_id:, allowed_origin:,
                                 authority: nil, can_publish: nil, mode: nil,
                                 safe_mode_options: nil, features: nil, expires_in_seconds: nil)
@@ -197,7 +197,6 @@ module SeatLayer
                        "expiresInSeconds" => expires_in_seconds })
       @client.post("/v1/designer/sessions", body)
     end
-    # rubocop:enable Metrics/ParameterLists
 
     def revoke_designer_session(session_id)
       @client.delete("/v1/designer/sessions/#{encode(session_id)}")

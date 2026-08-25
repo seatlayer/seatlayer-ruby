@@ -63,7 +63,7 @@ module SeatLayer
     end
 
     # Explicit keywords document each security boundary carried by the token.
-    # rubocop:disable Metrics/ParameterLists
+    # rubocop:disable-next Metrics/ParameterLists
     def create_buyer_access_session(event_key, include_public:, allowed_origin:, channel_ids: nil,
                                     expires_in_seconds: nil, max_quantity: UNSET, buyer_ref: UNSET,
                                     partner_ref: UNSET, client_request_id: UNSET, idempotency_key: nil)
@@ -75,7 +75,6 @@ module SeatLayer
       @client.post("/v1/events/#{encode(event_key)}/buyer-access-sessions", body,
                    idempotency_key: idempotency_key)
     end
-    # rubocop:enable Metrics/ParameterLists
 
     def list_buyer_access_sessions(event_key, limit: nil)
       @client.get("/v1/events/#{encode(event_key)}/buyer-access-sessions",
@@ -88,7 +87,7 @@ module SeatLayer
 
     # The URL and capability in this response are revealed once. Persist them
     # immediately; this mutation is deliberately never retried automatically.
-    # rubocop:disable Metrics/ParameterLists
+    # rubocop:disable-next Metrics/ParameterLists
     def create_access_link(event_key, channel_id, label: UNSET, expires_at: nil,
                            max_redemptions: nil, max_quantity: nil,
                            session_ttl_seconds: nil, include_public: nil, reason: nil,
@@ -101,7 +100,6 @@ module SeatLayer
       @client.post(path(event_key, "/#{encode(channel_id)}/access-links"), body,
                    idempotency_key: idempotency_key)
     end
-    # rubocop:enable Metrics/ParameterLists
 
     # Status only: the API never returns a previously revealed capability.
     def list_access_links(event_key, channel_id)

@@ -175,7 +175,7 @@ module SeatLayer
       end
     end
 
-    # rubocop:disable Metrics/ParameterLists
+    # rubocop:disable-next Metrics/ParameterLists
     def create(chart_id:, name: nil, slug: nil, starts_at: UNSET, venue: UNSET,
                external_ref: UNSET, currency: UNSET, idempotency_key: nil,
                description: UNSET, ends_at: UNSET, timezone: UNSET, locale: UNSET,
@@ -190,7 +190,6 @@ module SeatLayer
         "/v1/events", body, idempotency_key: idempotency_key, retry_policy: :header_replay
       )
     end
-    # rubocop:enable Metrics/ParameterLists
 
     def retrieve(event_key)
       @client.get("/v1/events/#{encode(event_key)}")
