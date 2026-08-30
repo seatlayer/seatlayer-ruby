@@ -57,11 +57,10 @@ Nullable event-create fields distinguish omission from an explicit reset: passin
 
 ## Test vs live
 
-## Fixed Renewable Seasons (unpublished candidate)
+## Fixed Renewable Seasons
 
-The source candidate exposes all 48 trusted organizer operations through
-`client.seasons`. It is not part of the currently published RubyGems release
-and does not make a production-support claim.
+Version `0.7.0` exposes all 48 trusted organizer operations through
+`client.seasons`.
 
 After the test hold/book/cancel journey and matching webhook deliveries,
 `validate_season_buyer_rehearsal(season_key)` sends no evidence body; SeatLayer
