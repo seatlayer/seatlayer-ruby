@@ -12,9 +12,9 @@ allocations, and webhooks through one typed ticketing API client.
 
 [`seatlayer` gem on RubyGems](https://rubygems.org/gems/seatlayer) ·
 [SeatLayer server SDK documentation](https://docs.seatlayer.io/server-sdk/install/) ·
-[SeatLayer reserved-seating platform](https://seatlayer.io/) ·
+[SeatLayer developer platform](https://seatlayer.io/developers/) ·
 [SeatLayer JavaScript seat map SDK](https://www.npmjs.com/package/@seatlayer/js) ·
-[Server API reference](https://docs.seatlayer.io/server-api/)
+[Server API reference](https://docs.seatlayer.io/server-api/events/)
 
 > **Server-side only.** This gem authenticates with your secret key. Never load it anywhere a
 > ticket buyer can reach — browser surfaces get short-lived, origin-bound tokens that you mint here.
@@ -56,6 +56,35 @@ Nullable event-create fields distinguish omission from an explicit reset: passin
 `venue: nil` sends JSON `null`; leaving `venue` out sends no field.
 
 ## Test vs live
+
+## Fixed Renewable Seasons (unpublished candidate)
+
+The source candidate exposes all 48 trusted organizer operations through
+`client.seasons`. It is not part of the currently published RubyGems release
+and does not make a production-support claim.
+
+After the test hold/book/cancel journey and matching webhook deliveries,
+`validate_season_buyer_rehearsal(season_key)` sends no evidence body; SeatLayer
+discovers the retained chain automatically. Retrieved Season holds contain
+inventory identity, not an authoritative amount—your platform owns package
+price, payment, order, tax, refunds, benefits, and ticket or pass delivery.
+
+```ruby
+checked = client.seasons.validate_season(
+  source_performance_group_keys: ["pg_subscription_run"]
+)
+draft = client.seasons.create_season(
+  name: "2027 subscription",
+  source_performance_group_keys: ["pg_subscription_run"],
+  idempotency_key: "season-create-2027"
+).fetch("season")
+```
+
+Treat `202` as accepted work and poll `retrieve_season_lifecycle` with the
+returned operation identity. Buyer-session minting and domain-exact booking,
+cancellation, and renewal actions remain single-attempt; only declared
+header-replay catalogue mutations retry automatically.
+
 
 Keys carry their own mode. `sk_test_…` keys can only touch test-mode events and `sk_live_…` only
 live ones; crossing them returns `403 mode_mismatch`, surfaced as `AuthError` with `mode_mismatch?`.

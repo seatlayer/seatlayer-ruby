@@ -101,6 +101,12 @@ module SeatLayer
       request("POST", path, body: body, idempotency_key: idempotency_key, retry_policy: retry_policy)
     end
 
+    # Internal path for non-POST mutations backed by exact response replay.
+    def mutation_with_header_replay(method, path, body = nil, idempotency_key: nil)
+      request(method, path, body: body, idempotency_key: idempotency_key,
+                            retry_policy: :header_replay)
+    end
+
     def put(path, body)
       request("PUT", path, body: body)
     end
