@@ -5,13 +5,13 @@
 [![Ruby](https://img.shields.io/badge/Ruby-%E2%89%A53.0-CC342D.svg)](https://www.ruby-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
-The official SeatLayer Ruby server SDK — the trusted side of a reserved-seating
-integration. Inspect what a hold really contains, price from server-owned seating-chart
-data, and book with a stable `booking_ref`, while managing charts, events, inventory,
-allocations, and webhooks through one typed ticketing API client.
+SeatLayer's official Ruby server SDK is the trusted side of its reserved seating and seat booking
+API. Inspect what a hold really contains, price from server-owned seating-chart data, and book
+with a stable `booking_ref`, while managing charts, events, inventory, allocations, and webhooks
+through one typed ticketing API client.
 
 [`seatlayer` gem on RubyGems](https://rubygems.org/gems/seatlayer) ·
-[SeatLayer server SDK documentation](https://docs.seatlayer.io/server-sdk/install/) ·
+[Ruby server SDK guide](https://docs.seatlayer.io/server-sdk/ruby/) ·
 [SeatLayer developer platform](https://seatlayer.io/developers/) ·
 [SeatLayer JavaScript seat map SDK](https://www.npmjs.com/package/@seatlayer/js) ·
 [Server API reference](https://docs.seatlayer.io/server-api/events/)
@@ -19,7 +19,7 @@ allocations, and webhooks through one typed ticketing API client.
 > **Server-side only.** This gem authenticates with your secret key. Never load it anywhere a
 > ticket buyer can reach — browser surfaces get short-lived, origin-bound tokens that you mint here.
 
-## Install
+## Install the Ruby seat booking SDK
 
 ```ruby
 gem "seatlayer"
@@ -40,7 +40,8 @@ require "seatlayer"
 client = SeatLayer::Client.new(ENV.fetch("SEATLAYER_SECRET_KEY"))
 
 # 1. Provision a venue for a new organiser from a public template.
-chart = client.templates.instantiate_template("arena-standard")["meta"]
+# Replace this placeholder with a template id from your catalog.
+chart = client.templates.instantiate_template("your-published-template")["meta"]
 client.charts.publish(chart["id"])
 
 # 2. Create an event on it.
@@ -54,8 +55,6 @@ client.inventory.book(event["key"], hold_id: held["holdId"], booking_ref: "order
 
 Nullable event-create fields distinguish omission from an explicit reset: passing, for example,
 `venue: nil` sends JSON `null`; leaving `venue` out sends no field.
-
-## Test vs live
 
 ## Fixed Renewable Seasons
 
@@ -84,6 +83,7 @@ returned operation identity. Buyer-session minting and domain-exact booking,
 cancellation, and renewal actions remain single-attempt; only declared
 header-replay catalogue mutations retry automatically.
 
+## Test vs live
 
 Keys carry their own mode. `sk_test_…` keys can only touch test-mode events and `sk_live_…` only
 live ones; crossing them returns `403 mode_mismatch`, surfaced as `AuthError` with `mode_mismatch?`.
@@ -97,15 +97,21 @@ raise "Refusing to boot production against test-mode seating data." if
 A publishable `pk_` key is rejected at construction with a message naming the mistake, rather than
 failing as a `401` three round-trips later.
 
-## The two selling flows
+## Book reserved seats from Ruby
 
 **Buyer picks seats in the browser.** Your frontend holds them; your backend confirms the price and
 books. Never price from what the browser sent you — `retrieve_hold` is authoritative.
 
 ```ruby
 hold = client.inventory.retrieve_hold(event_key, hold_id)
-total = hold["items"].sum { |item| item["unitPrice"] }
-# … charge `total` in hold["currency"] …
+currencies = hold["items"].map { |item| item.fetch("currency") }.uniq
+raise "A hold must use one currency" unless currencies.one?
+
+currency = currencies.first
+total = hold["items"].sum do |item|
+  item.fetch("unitPrice") * item.fetch("quantity", 1)
+end
+# … charge `total` in `currency` …
 client.inventory.book(event_key, hold_id: hold_id, booking_ref: charge.id)
 ```
 
@@ -205,12 +211,12 @@ The full set, all opt-in:
 |---|---|
 | `event:view` | Read the seat map and its live states |
 | `event:block` | Block and unblock seats |
-| `event:cancel` | Unbook paid seats and issue gateway refunds — destructive, moves money |
+| `event:cancel` | Cancel a Platform/SDK booking by reference and return its inventory to sale; does not move gateway money |
 | `event:reports` | Read sales and availability reports |
 | `event:channels:view` | Read sales channels and their allocations |
 | `event:channels:manage` | Create, pause and archive channels; rotate access links |
 | `event:orders:read` | Read SeatLayer-managed orders |
-| `event:refund` | Refund a SeatLayer-managed order |
+| `event:refund` | Refund an eligible Managed Ticketing order through its connected gateway |
 | `event:tickets:send` | Send SeatLayer-managed tickets |
 | `event:door:view` | Read the door list |
 | `event:door:checkin` | Check tickets in and out |
@@ -289,17 +295,20 @@ error carries `status`, `code`, `body` and `request_id` — quote the request id
 ## Reliability
 
 **Retries.** Reads (`GET`/`HEAD`) retry 429, 408 and 5xx with exponential backoff and full jitter;
-`Retry-After` wins when the server sends it. Automatic mutation retries are limited to the five
-operations backed by exact response replay: `charts.create`, `charts.copy`,
-`templates.instantiate_template`, `events.create`, and `workspaces.create`. Other 4xx responses
+`Retry-After` wins when the server sends it. Fourteen mutations use exact header replay:
+`charts.create`, `charts.copy`, `templates.instantiate_template`, `events.create`,
+`workspaces.create`, `performance_groups.create`, `seasons.create_season`,
+`seasons.update_season`, `seasons.delete_season`, `seasons.create_season_plan`,
+`seasons.duplicate_season_to_live`, `seasons.create_season_holder_import`,
+`seasons.create_season_renewal_offers`, and `seasons.create_season_amendment`. Other 4xx responses
 are never retried.
 
-**Idempotency.** Those five replay-backed operations carry an `Idempotency-Key`, generated when you
-do not supply one and reused across attempts. Other mutations are single-attempt and receive no
-automatic key. A caller-supplied key is forwarded but does not enable retries. This includes
-inventory holds and bookings, show-once credential or secret creation, unsupported operations, and
-raw `request` mutations. Keep `booking_ref` in the booking body for reconciliation, but handle an
-unknown network outcome explicitly instead of automatically repeating the sale.
+**Idempotency.** Those 14 replay-backed operations carry an `Idempotency-Key`, generated when you
+do not supply one and reused across attempts. All remaining SDK mutations are single-attempt. Some
+have a server-side domain idempotency contract, but the SDK does not retry them automatically. This
+includes inventory holds and bookings, show-once credential or secret creation, unsupported
+operations, and raw `request` mutations. Keep `booking_ref` in the booking body for reconciliation,
+but handle an unknown network outcome explicitly instead of automatically repeating the sale.
 
 ```ruby
 client.events.create(chart_id: chart_id, idempotency_key: "provision-event-#{event_id}")
@@ -324,6 +333,10 @@ client.request("POST", "/v1/events/ev_1/some-new-route", body: { "qty" => 2 })
 
 ## API surface
 
+The client exposes these resources. Performance Groups cover runs, sessions, holds, and bookings;
+Seasons cover catalogue, plan, sales, buyer-session, booking, renewal, occurrence, reporting,
+outbox, and support operations.
+
 | Resource | Methods |
 | --- | --- |
 | `charts` | `list` `list_all` `create` `retrieve` `update` `delete` `copy` `archive` `unarchive` `publish` |
@@ -334,8 +347,10 @@ client.request("POST", "/v1/events/ev_1/some-new-route", body: { "qty" => 2 })
 | `sessions` | `create_manage_session` `revoke_manage_session` `create_designer_session` `revoke_designer_session` |
 | `webhooks` | `list` `create` `update` `delete` `list_deliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
+| `performance_groups` | `list` `create` `retrieve` `delete` `activate` `close` `retrieve_lifecycle` `create_buyer_access_session` `list_buyer_access_sessions` `revoke_buyer_access_session` `retrieve_hold` `book_hold` `retrieve_booking` |
+| `seasons` | 48 operations for catalogue and Plan lifecycle, sales windows, buyer access and booking, holder imports, renewals, occurrence amendments, reports, audit, outbox, and support export |
 
-Full reference: [docs.seatlayer.io/server-sdk](https://docs.seatlayer.io/server-sdk/install/)
+Full reference: [SeatLayer Ruby server SDK guide](https://docs.seatlayer.io/server-sdk/ruby/)
 
 ### Deliberately not in this SDK
 
@@ -386,16 +401,16 @@ outcome before trying again.
 
 ### Can I use my own payment provider?
 
-Yes. SeatLayer never processes payment. Inspect the hold, compute the charge from
-the returned `items` and their authoritative `unitPrice` and `currency`, take the
-money through whichever provider you already use — Stripe, Adyen, Razorpay, or your
-own — and then book the hold with your order id as `booking_ref`. SeatLayer owns
-seating state, holds, booking concurrency, and the inventory ledger; your platform
-owns payments, commercial orders, tickets, delivery, and refunds.
+Yes. This server SDK does not process payment in a Platform/SDK integration. Inspect the hold,
+compute the charge from each returned item's authoritative `unitPrice`, `quantity`, and `currency`,
+take the money through whichever provider you already use, and then book the hold with your order
+id as `booking_ref`. SeatLayer owns seating state, holds, booking concurrency, and the inventory
+ledger in this integration; your platform owns payments, commercial orders, tickets, delivery,
+and refunds. Managed Ticketing is a separate product path with organizer-connected payments.
 
 ## Continue your Ruby integration
 
-- [Follow the SeatLayer server SDK guide](https://docs.seatlayer.io/server-sdk/install/)
+- [Follow the Ruby server SDK guide](https://docs.seatlayer.io/server-sdk/ruby/)
   for installation, authentication, and the full hold-to-booking flow.
 - [Handle errors, retries, and safe booking repeats](https://docs.seatlayer.io/server-sdk/reliability/)
   before connecting a production order flow.
