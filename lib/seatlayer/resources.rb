@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 module SeatLayer
+  EVENT_HOSTING_REGIONS = %w[
+    western-europe eastern-europe north-america-east north-america-west
+    south-america asia-pacific northeast-asia southeast-asia oceania africa middle-east
+  ].freeze
+
   # Shared plumbing for the resource namespaces.
   class Resource
     UNSET = Object.new.freeze
@@ -179,8 +184,13 @@ module SeatLayer
     def create(chart_id:, name: nil, slug: nil, starts_at: UNSET, venue: UNSET,
                external_ref: UNSET, currency: UNSET, idempotency_key: nil,
                description: UNSET, ends_at: UNSET, timezone: UNSET, locale: UNSET,
-               poster_asset_id: UNSET, mode: nil)
-      body = compact({ "chartId" => chart_id, "name" => name, "slug" => slug, "mode" => mode })
+               poster_asset_id: UNSET, mode: nil, region: nil)
+      unless region.nil? || EVENT_HOSTING_REGIONS.include?(region)
+        raise ArgumentError, "region must be a supported SeatLayer Event region"
+      end
+
+      body = compact({ "chartId" => chart_id, "name" => name, "slug" => slug,
+                       "mode" => mode, "region" => region })
       body.merge!(supplied({ "startsAt" => starts_at, "venue" => venue,
                              "externalRef" => external_ref, "currency" => currency,
                              "description" => description, "endsAt" => ends_at,
