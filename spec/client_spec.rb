@@ -600,7 +600,8 @@ RSpec.describe SeatLayer::Client do
                                        ])
 
       client.events.create(chart_id: "c_1", venue: nil, description: "Matinee", ends_at: 1800,
-                           timezone: "Asia/Kolkata", locale: "en-IN", poster_asset_id: "ast_1")
+                           timezone: "Asia/Kolkata", locale: "en-IN", poster_asset_id: "ast_1",
+                           region: "asia-pacific")
       client.events.update_chart("ev_1", acknowledge_dropped_assignments: true,
                                          reason: "approved migration")
       client.events.update_hold_ttl("ev_1", nil)
@@ -611,7 +612,7 @@ RSpec.describe SeatLayer::Client do
 
       expect(JSON.parse(transport.calls[0].body)).to include(
         "venue" => nil, "description" => "Matinee", "endsAt" => 1800,
-        "posterAssetId" => "ast_1"
+        "posterAssetId" => "ast_1", "region" => "asia-pacific"
       )
       expect(JSON.parse(transport.calls[1].body)).to eq(
         "acknowledgeDroppedAssignments" => true, "reason" => "approved migration"

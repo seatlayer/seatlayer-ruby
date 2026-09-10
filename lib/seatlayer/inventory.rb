@@ -252,9 +252,14 @@ module SeatLayer
       @client.get("/v1/workspaces")
     end
 
-    def create(name:, external_ref: UNSET, idempotency_key: nil)
+    def create(name:, external_ref: UNSET, default_region: nil, idempotency_key: nil)
+      unless default_region.nil? || EVENT_HOSTING_REGIONS.include?(default_region)
+        raise ArgumentError, "default_region must be a supported SeatLayer Event region"
+      end
+
       body = { "name" => name }
       body.merge!(supplied({ "externalRef" => external_ref }))
+      body["defaultRegion"] = default_region unless default_region.nil?
       @client.post(
         "/v1/workspaces", body, idempotency_key: idempotency_key, retry_policy: :header_replay
       )
@@ -269,6 +274,13 @@ module SeatLayer
     # The organisation's default workspace cannot be disabled — the API answers
     # 409 +default_workspace_required+. Promote another one first.
     def update(workspace_id, fields)
+      region = fields[:default_region] || fields["defaultRegion"]
+      unless region.nil? || EVENT_HOSTING_REGIONS.include?(region)
+        raise ArgumentError, "default_region must be a supported SeatLayer Event region"
+      end
+
+      fields = fields.dup
+      fields["defaultRegion"] = fields.delete(:default_region) if fields.key?(:default_region)
       @client.patch("/v1/workspaces/#{encode(workspace_id)}", fields)
     end
   end
