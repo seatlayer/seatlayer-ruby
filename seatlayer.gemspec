@@ -8,12 +8,12 @@ Gem::Specification.new do |spec|
   spec.authors = ["SeatLayer"]
   spec.email = ["hello@seatlayer.io"]
 
-  spec.summary = "Official Ruby server SDK for the SeatLayer reserved-seating API."
+  spec.summary = "Official Ruby server SDK for the SeatLayer reserved-seating API: seating charts, seat maps, holds and seat booking."
   spec.description = "Server-side Ruby client for SeatLayer reserved seating: seating charts, " \
                      "events, seat maps, holds, seat booking, embed sessions and webhook " \
                      "verification, with idempotency and retries built in."
   # RubyGems renders this as "Homepage" in the sidebar, so it points at the product,
-  # not at one page of the docs — the docs get their own documentation_uri below.
+  # not at one page of the docs. The docs get their own documentation_uri below.
   spec.homepage = "https://seatlayer.io"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.0.0"
