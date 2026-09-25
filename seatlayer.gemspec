@@ -8,7 +8,8 @@ Gem::Specification.new do |spec|
   spec.authors = ["SeatLayer"]
   spec.email = ["hello@seatlayer.io"]
 
-  spec.summary = "Official Ruby server SDK for the SeatLayer reserved-seating API: seating charts, seat maps, holds and seat booking."
+  spec.summary = "Official Ruby server SDK for the SeatLayer reserved-seating API: " \
+                 "seating charts, seat maps, holds and seat booking."
   spec.description = "Server-side Ruby client for SeatLayer reserved seating: seating charts, " \
                      "events, seat maps, holds, seat booking, embed sessions and webhook " \
                      "verification, with idempotency and retries built in."
