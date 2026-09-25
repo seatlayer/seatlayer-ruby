@@ -5,7 +5,7 @@
 [![Ruby](https://img.shields.io/badge/Ruby-%E2%89%A53.0-CC342D.svg)](https://www.ruby-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
-SeatLayer is interactive seating chart software built for stadium scale. Platforms embed the white-label seat picker with their own checkout; organizers sell seated events on their own website with their own payment gateway.
+The official Ruby client for the SeatLayer API. The `seatlayer` gem lets a Ruby or Rails backend inspect seat holds, price orders from server data, book reserved seats and verify webhooks, with no runtime dependencies. SeatLayer is seating chart and reserved-seat ticketing software built for venues up to stadium scale.
 
 SeatLayer's official Ruby server SDK is the trusted side of its reserved seating and seat booking
 API. Inspect what a hold really contains, price from server-owned seating-chart data, and book
@@ -39,7 +39,7 @@ gem "seatlayer"
 gem install seatlayer
 ```
 
-Requires Ruby 3.0 or newer. **No runtime dependencies** — `net/http`, `json` and `openssl` from the
+Requires Ruby 3.0 or newer. **No runtime dependencies**: `net/http`, `json` and `openssl` from the
 standard library.
 
 ## Quick start
@@ -92,7 +92,7 @@ Version `0.7.0` exposes all 48 trusted organizer operations through
 After the test hold/book/cancel journey and matching webhook deliveries,
 `validate_season_buyer_rehearsal(season_key)` sends no evidence body; SeatLayer
 discovers the retained chain automatically. Retrieved Season holds contain
-inventory identity, not an authoritative amount—your platform owns package
+inventory identity, not an authoritative amount. Your platform owns package
 price, payment, order, tax, refunds, benefits, and ticket or pass delivery.
 
 ```ruby
@@ -128,7 +128,7 @@ failing as a `401` three round-trips later.
 ## Book reserved seats from Ruby
 
 **Buyer picks seats in the browser.** Your frontend holds them; your backend confirms the price and
-books. Never price from what the browser sent you — `retrieve_hold` is authoritative.
+books. Never price from what the browser sent you: `retrieve_hold` is authoritative.
 
 ```ruby
 hold = client.inventory.retrieve_hold(event_key, hold_id)
@@ -146,7 +146,7 @@ client.inventory.book(event_key, hold_id: hold_id, booking_ref: charge.id)
 **Your backend picks the seats.** Phone orders, box office, comps.
 
 ```ruby
-# Payment already taken — book outright, so nothing is stranded if a second call fails.
+# Payment already taken: book outright, so nothing is stranded if a second call fails.
 client.inventory.book_best_available(event_key, qty: 2, booking_ref: "phone-1183")
 
 # Or name the seats yourself.
@@ -177,7 +177,7 @@ pause/archive controls, audit-safe session listing, and channel reports are on
 ## Listing and pagination
 
 `list` returns one page plus a `nextCursor`. `list_all` pages for you and returns a lazy
-`Enumerator` when no block is given — the point of paginating is to *not* hold an unbounded result
+`Enumerator` when no block is given, because the point of paginating is to *not* hold an unbounded result
 set in memory, so `.lazy.first(n)` stops fetching once it has enough.
 
 ```ruby
@@ -191,13 +191,13 @@ client.events.list_all do |event|
   sync(event)
 end
 
-# Lazily — this fetches one page, not all of them.
+# Lazily: this fetches one page, not all of them.
 client.charts.list_all.lazy.first(5)
 ```
 
 Listing events includes live availability `counts` by default, which costs the server one
-round-trip **per event**. `list_all` turns them off automatically — walking a whole catalogue is
-exactly when you don't want that — and you can control it explicitly:
+round-trip **per event**. `list_all` turns them off automatically, since walking a whole catalogue is
+exactly when you don't want that, and you can control it explicitly:
 
 ```ruby
 client.events.list(limit: 50, counts: false)
@@ -205,14 +205,14 @@ client.events.list(limit: 50, counts: false)
 
 ## Keeping a hold alive
 
-When an order takes longer than the checkout window — an invoice, a phone sale — extend rather than
+When an order takes longer than the checkout window (an invoice, a phone sale), extend rather than
 release and re-hold. Releasing first hands the seats to whoever is racing for them in between.
 
 ```ruby
 begin
   client.inventory.extend_hold(event_key, hold_id, ttl_ms: 10 * 60_000)
 rescue SeatLayer::ConflictError
-  # Gone, expired, or at its renewal cap — the buyer has to re-pick.
+  # Gone, expired, or at its renewal cap: the buyer has to re-pick.
 end
 ```
 
@@ -250,8 +250,8 @@ The full set, all opt-in:
 | `event:door:checkin` | Check tickets in and out |
 | `event:boxoffice` | Use the managed box-office surface |
 
-The two `event:channels:*` capabilities are **not** in the default — a token minted before sales
-channels existed must not silently acquire channel authority — so ask for them explicitly if the
+The two `event:channels:*` capabilities are **not** in the default (a token minted before sales
+channels existed must not silently acquire channel authority), so ask for them explicitly if the
 page manages channels.
 
 Designer minting returns the API envelope unchanged: read the token and effective safe-mode and
@@ -280,7 +280,7 @@ class WebhooksController < ApplicationController
     )
 
     # The signed body carries `at`, but nothing enforces a freshness window, so a
-    # captured delivery stays valid indefinitely. Deduplicate on occurrenceId —
+    # captured delivery stays valid indefinitely. Deduplicate on occurrenceId:
     # this is your replay protection, not an optimisation.
     return head :ok if already_processed?(event["occurrenceId"])
 
@@ -315,10 +315,10 @@ end
 | `ConflictError` | 409 | Inventory moved, or a guard rejected the change |
 | `ValidationError` | 422 | Understood and rejected |
 | `RateLimitError` | 429 | Over budget; carries `retry_after` |
-| `ConnectionError` | — | No answer: DNS, TLS, socket, timeout |
+| `ConnectionError` | none | No answer: DNS, TLS, socket, timeout |
 
 All descend from `SeatLayer::Error`, so `rescue SeatLayer::Error` catches everything. Every API
-error carries `status`, `code`, `body` and `request_id` — quote the request id in support requests.
+error carries `status`, `code`, `body` and `request_id`. Quote the request id in support requests.
 
 ## Reliability
 
@@ -393,15 +393,15 @@ Some API surface is intentionally unwrapped, not merely pending:
   There is no server-side subscribe; a secret-key caller gets authoritative state from
   `events.retrieve_report` and `inventory.retrieve_availability`.
 
-None of these are reachable through `request` as a supported path either — they are excluded from
+None of these are reachable through `request` as a supported path either; they are excluded from
 the public manifest, not just from the wrapper.
 
 ## Frequently asked questions
 
 ### How do I book seats from Ruby?
 
-Create a client with your secret key, obtain a hold id — either from the buyer's
-browser session or by holding server-side — and call `inventory.book(event_key, hold_id: ..., booking_ref: ...)`.
+Create a client with your secret key, obtain a hold id (either from the buyer's
+browser session or by holding server-side) and call `inventory.book(event_key, hold_id: ..., booking_ref: ...)`.
 `booking_ref` is your own stable order id and is the join between SeatLayer
 inventory and your commercial order, so the same reference identifies the booking
 in Booking History and when you later cancel it. For phone orders, box office, and
@@ -424,7 +424,7 @@ and at what price, so charge from its `items` rather than from anything the brow
 sent you. When an order runs longer than the checkout window, `inventory.extend_hold`
 renews the hold instead of releasing and re-holding, which would hand the seats to
 whoever is racing for them. Bookings carry the server's exact-selection plus
-`booking_ref` safeguard, but the SDK sends each booking once — reconcile an unknown
+`booking_ref` safeguard, but the SDK sends each booking once; reconcile an unknown
 outcome before trying again.
 
 ### Can I use my own payment provider?

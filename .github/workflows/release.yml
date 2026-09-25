@@ -1,7 +1,7 @@
 name: Release
 
 # Publishes to RubyGems via Trusted Publishing (OIDC). No API key exists in this
-# repository, in Actions secrets, or in Doppler.
+# repository or in its Actions secrets.
 #
 # This matters more here than on any other registry: seatlayer.gemspec sets
 # `rubygems_mfa_required = "true"`, so a plain `gem push` demands an interactive
@@ -63,7 +63,7 @@ jobs:
         run: |
           # `files` in the gemspec is explicit globs, never `git ls-files`, so
           # spec/, .github/, .rubocop.yml, Gemfile and AGENTS.md stay out. This
-          # asserts that stays true — a stowaway reaches every consumer's bundle.
+          # asserts that stays true: a stowaway reaches every consumer's bundle.
           tar -xOf ./seatlayer-*.gem data.tar.gz | tar tz | sort > /tmp/contents.txt
           cat /tmp/contents.txt
           if grep -qE '^(spec/|\.github/|AGENTS\.md|Gemfile|\.rubocop\.yml)' /tmp/contents.txt; then
@@ -109,6 +109,6 @@ jobs:
       # NOT rubygems/release-gem, despite that being the headline action: it
       # runs `bundle exec rake release`, which builds AND creates and pushes the
       # git tag itself. This workflow is triggered BY the tag, so that would
-      # collide — and there is no Rakefile here for it to run.
+      # collide, and there is no Rakefile here for it to run.
       - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
       - run: gem push ./*.gem
