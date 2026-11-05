@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- Added the 35 remaining Fixed Renewable Season operations to `client.seasons` (83 in all):
+- Added the 38 remaining Fixed Renewable Season operations to `client.seasons` (86 in all):
   performances, package edits and prices, publishing, checkout tests, occurrence returns and
-  reclaims, holders, Season order refunds and cancellations, hosted renewals, the sales,
+  reclaims, holders, Season order refunds and cancellations, hosted renewals, renewal quotes,
+  intents and checkouts, the sales,
   seats and seat-count reports, and bulk refunds with their jobs.
 - Added three resources: `client.holders` (holders, customers, holder tickets and ticket
   transfers), `client.orders` (account and event orders, refunds, cancellations and ticket
@@ -15,7 +16,7 @@
 - `export_season_holders_csv`, `export_season_orders_csv` and `orders.export_event_orders_csv`
   return the raw CSV text. `delete_season_plan` and `events.delete_event_discount_code` return
   an empty Hash (the API answers 204).
-- 24 of the new operations use exact header replay (38 in the SDK now) and retry with one
+- 26 of the new operations use exact header replay (40 in the SDK now) and retry with one
   `Idempotency-Key`; every other new mutation is single-attempt.
 - `Webhooks::EVENT_NAMES` adds `series.created`, `series.dates_added`, `order.paid`,
   `order.refunded`, `order.cancelled`, `customer.created`, `customer.email_changed`,
@@ -35,6 +36,12 @@
   `season.ticket.voided`, and the Season lifecycle, hold, booking, renewal, operation and
   amendment events.
 - `events.list` and `events.list_all` take `series_key:` to list one event series' dates.
+- Added `seasons.retrieve_season_renewal_quote`: what renewing an offer costs, and whether SeatLayer checkout can take it now.
+- Added `seasons.create_season_renewal_intent`: record a holder's intent for a renewal taken by phone or at the box office, so your own checkout can commit.
+- Added `seasons.create_season_renewal_checkout`: a SeatLayer checkout that renews an offer with no hosted page, with header replay.
+- Added `holders.create_holder_renewal_checkout`: the same checkout for one of a holder's offers, with header replay.
+- Added `holders.decline_holder_renewal_offer`: decline one of a holder's offers, with an optional `reason:`.
+- `seasons.decline_season_renewal_offer` takes an optional `reason:`, kept on the offer as `declineReason`.
 
 ## 0.8.0 (2026-09-10)
 

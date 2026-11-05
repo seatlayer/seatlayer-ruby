@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe SeatLayer::Holders do
-  it "maps all 12 holder and customer operations and their replay classes" do
-    client, transport = build_client(Array.new(12) { { status: 200 } })
+  it "maps all 14 holder and customer operations and their replay classes" do
+    client, transport = build_client(Array.new(15) { { status: 200 } })
     holders = client.holders
     ref = "hol/a"
 
@@ -20,6 +20,12 @@ RSpec.describe SeatLayer::Holders do
     holders.create_holder_return(
       ref, ticket_ids: ["tkt_0123456789abcdef01234567"], idempotency_key: "return-1"
     )
+    holders.create_holder_renewal_checkout(
+      ref, "offer/1", return_url: "https://tickets.example/renewed", buyer_email: "cara@example.com",
+                      buyer_name: "Cara", provider: "stripe", idempotency_key: "renew-1"
+    )
+    holders.decline_holder_renewal_offer(ref, "offer/1", reason: "Moving away")
+    holders.decline_holder_renewal_offer(ref, "offer/1")
 
     expect(transport.calls.map { |call| request_summary(call) }).to eq(
       [
@@ -36,11 +42,17 @@ RSpec.describe SeatLayer::Holders do
         ["GET /v1/holders/hol%2Fa/transfers", nil, false],
         ["POST /v1/holders/hol%2Fa/transfers/xfer%2F1/cancel", nil, false],
         ["POST /v1/holders/hol%2Fa/transfers/xfer%2F1/accept", nil, false],
-        ["POST /v1/holders/hol%2Fa/returns", { "ticketIds" => ["tkt_0123456789abcdef01234567"] }, true]
+        ["POST /v1/holders/hol%2Fa/returns", { "ticketIds" => ["tkt_0123456789abcdef01234567"] }, true],
+        ["POST /v1/holders/hol%2Fa/renewal-offers/offer%2F1/checkout",
+         { "returnUrl" => "https://tickets.example/renewed", "buyerEmail" => "cara@example.com",
+           "buyerName" => "Cara", "provider" => "stripe" }, true],
+        ["POST /v1/holders/hol%2Fa/renewal-offers/offer%2F1/decline", { "reason" => "Moving away" }, false],
+        ["POST /v1/holders/hol%2Fa/renewal-offers/offer%2F1/decline", {}, false]
       ]
     )
     expect(transport.calls[2].headers["Idempotency-Key"]).to eq("holder-1")
     expect(transport.calls[11].headers["Idempotency-Key"]).to eq("return-1")
+    expect(transport.calls[12].headers["Idempotency-Key"]).to eq("renew-1")
   end
 
   it "retries a holder return with one Idempotency-Key, generated or the caller's" do
@@ -64,6 +76,31 @@ RSpec.describe SeatLayer::Holders do
     keys = transport.calls.map { |call| call.headers["Idempotency-Key"] }
     expect(keys[0]).to eq(keys[1])
     expect(keys[2..]).to eq(%w[return-1 return-1])
+  end
+
+  it "retries a holder renewal checkout with one key, generated or the caller's, and declines once" do
+    responses = [
+      { status: 429, headers: { "Retry-After" => "0" } }, { status: 201 },
+      { status: 429, headers: { "Retry-After" => "0" } }, { status: 201 },
+      { status: 429, headers: { "Retry-After" => "0" } }
+    ]
+    client, transport = build_client(responses)
+
+    client.holders.create_holder_renewal_checkout("a/b", "offer_1", return_url: "https://tickets.example/r")
+    client.holders.create_holder_renewal_checkout("a/b", "offer_1", return_url: "https://tickets.example/r",
+                                                                    idempotency_key: "renew-1")
+    expect { client.holders.decline_holder_renewal_offer("a/b", "offer_1", reason: "Moving away") }
+      .to raise_error(SeatLayer::RateLimitError)
+
+    checkout = ["POST /v1/holders/a%2Fb/renewal-offers/offer_1/checkout",
+                { "returnUrl" => "https://tickets.example/r" }, true]
+    expect(transport.calls.map { |call| request_summary(call) }).to eq(
+      [checkout, checkout, checkout, checkout,
+       ["POST /v1/holders/a%2Fb/renewal-offers/offer_1/decline", { "reason" => "Moving away" }, false]]
+    )
+    keys = transport.calls.map { |call| call.headers["Idempotency-Key"] }
+    expect(keys[0]).to eq(keys[1])
+    expect(keys[2..3]).to eq(%w[renew-1 renew-1])
   end
 
   it "sends an explicit null only for the contact fields passed as nil" do

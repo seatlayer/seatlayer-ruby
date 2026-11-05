@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe SeatLayer::Seasons do
-  it "maps all 83 Season operations and their exact replay classes" do
-    client, transport = build_client(Array.new(83) { { status: 200 } })
+  it "maps all 86 Season operations and their exact replay classes" do
+    client, transport = build_client(Array.new(86) { { status: 200 } })
     seasons = client.seasons
     key = "sea/a"
 
@@ -116,6 +116,12 @@ RSpec.describe SeatLayer::Seasons do
                                                    idempotency_key: "refund-date-1")
     seasons.list_season_bulk_jobs(key)
     seasons.retrieve_season_bulk_job(key, "job/1")
+    seasons.retrieve_season_renewal_quote(key, "offer/1")
+    seasons.create_season_renewal_intent(key, "offer/1")
+    seasons.create_season_renewal_checkout(
+      key, "offer/1", return_url: "https://tickets.example/renewed", buyer_email: "ana@example.com",
+                      buyer_name: "Ana Silva", provider: "stripe", idempotency_key: "renew-1"
+    )
 
     expected = [
       "GET /v1/seasons?workspaceId=ws+1&structureState=draft&limit=20&cursor=c%2F1",
@@ -171,7 +177,10 @@ RSpec.describe SeatLayer::Seasons do
       "GET /v1/seasons/sea%2Fa/reports/holders.csv?q=ann&status=renewal",
       "GET /v1/seasons/sea%2Fa/reports/orders.csv", "GET /v1/seasons/sea%2Fa/seat-counts",
       "POST /v1/seasons/sea%2Fa/performances/ev%2F3/refunds", "GET /v1/seasons/sea%2Fa/jobs",
-      "GET /v1/seasons/sea%2Fa/jobs/job%2F1"
+      "GET /v1/seasons/sea%2Fa/jobs/job%2F1",
+      "GET /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/quote",
+      "POST /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/intent",
+      "POST /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/checkout"
     ]
     actual = transport.calls.map do |call|
       "#{call.http_method} #{call.url.delete_prefix("https://api.seatlayer.io")}"
@@ -198,12 +207,15 @@ RSpec.describe SeatLayer::Seasons do
         { "actionId" => "date_1" }, { "email" => "ann@example.com" }, nil, nil,
         { "email" => "ann@example.com", "name" => nil }, { "offerIds" => ["offer/1"] },
         nil, nil, nil, nil, nil, nil,
-        { "amount" => "per_date", "reason" => "Storm" }, nil, nil
+        { "amount" => "per_date", "reason" => "Storm" }, nil, nil,
+        nil, nil,
+        { "returnUrl" => "https://tickets.example/renewed", "buyerEmail" => "ana@example.com",
+          "buyerName" => "Ana Silva", "provider" => "stripe" }
       ]
     )
 
     replay_indexes = [2, 4, 5, 10, 18, 27, 29, 38, 48, 50, 51, 52, 53, 54, 55, 56, 58, 60, 61, 62,
-                      66, 67, 68, 80]
+                      66, 67, 68, 80, 85]
     transport.calls.each_with_index do |call, index|
       if replay_indexes.include?(index)
         expect(call.headers).to have_key("Idempotency-Key")
@@ -212,6 +224,38 @@ RSpec.describe SeatLayer::Seasons do
       end
     end
     expect(transport.calls[80].headers["Idempotency-Key"]).to eq("refund-date-1")
+    expect(transport.calls[85].headers["Idempotency-Key"]).to eq("renew-1")
+  end
+
+  it "sends the decline reason, and retries a renewal checkout with one key but not the intent" do
+    responses = [
+      { status: 200 }, { status: 200 },
+      { status: 429, headers: { "Retry-After" => "0" } }, { status: 201, body: '{"orderId":"ord_1"}' },
+      { status: 429, headers: { "Retry-After" => "0" } }
+    ]
+    client, transport = build_client(responses)
+    seasons = client.seasons
+
+    seasons.decline_season_renewal_offer("sea/a", "offer/1", reason: "Moving away")
+    seasons.decline_season_renewal_offer("sea_1", "offer_1")
+    started = seasons.create_season_renewal_checkout("sea_1", "offer_1",
+                                                     return_url: "https://tickets.example/r")
+    expect { seasons.create_season_renewal_intent("sea_1", "offer_1") }
+      .to raise_error(SeatLayer::RateLimitError)
+
+    expect(started).to eq({ "orderId" => "ord_1" })
+    checkout = ["POST /v1/seasons/sea_1/renewal-offers/offer_1/checkout",
+                { "returnUrl" => "https://tickets.example/r" }, true]
+    expect(transport.calls.map { |call| request_summary(call) }).to eq(
+      [
+        ["POST /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/decline", { "reason" => "Moving away" }, false],
+        ["POST /v1/seasons/sea_1/renewal-offers/offer_1/decline", {}, false],
+        checkout, checkout,
+        ["POST /v1/seasons/sea_1/renewal-offers/offer_1/intent", nil, false]
+      ]
+    )
+    expect(transport.calls[2].headers["Idempotency-Key"])
+      .to eq(transport.calls[3].headers["Idempotency-Key"])
   end
 
   it "sends price types, sale settings, holder contacts and date cancels on the wire" do

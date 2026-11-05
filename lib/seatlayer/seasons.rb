@@ -6,7 +6,7 @@ module SeatLayer
   # Browser selection belongs in the distinct SeasonPicker. Give it only the
   # show-once scoped token returned by +create_season_buyer_access_session+.
   #
-  # One thin method per public Season operation (83 of them), so the class is
+  # One thin method per public Season operation (86 of them), so the class is
   # long by design rather than doing too much.
   # rubocop:disable-next Metrics/ClassLength
   class Seasons < Resource
@@ -206,8 +206,12 @@ module SeatLayer
                      "bookingRef" => booking_ref, "planActivationId" => plan_activation_id })
     end
 
-    def decline_season_renewal_offer(season_key, offer_id)
-      @client.post(path(season_key, "/renewal-offers/#{encode(offer_id)}/decline"), {})
+    # Decline a renewal offer and release its seats at once. +reason+ (1 to 200
+    # characters) is kept on the offer as +declineReason+; a repeated decline
+    # keeps the first reason.
+    def decline_season_renewal_offer(season_key, offer_id, reason: nil)
+      @client.post(path(season_key, "/renewal-offers/#{encode(offer_id)}/decline"),
+                   compact({ "reason" => reason }))
     end
 
     def release_season_renewal_offer(season_key, offer_id)
@@ -471,6 +475,30 @@ module SeatLayer
     # Send one renewal offer again. Single-attempt: never retried automatically.
     def resend_season_renewal_offer(season_key, offer_id)
       @client.post(path(season_key, "/renewal-offers/#{encode(offer_id)}/resend"))
+    end
+
+    # What renewing an offer costs, priced as the SeatLayer checkout will charge
+    # it. +problem+ is nil when SeatLayer checkout can take the renewal now.
+    def retrieve_season_renewal_quote(season_key, offer_id)
+      @client.get(path(season_key, "/renewal-offers/#{encode(offer_id)}/quote"))
+    end
+
+    # Record that the holder means to renew, for a renewal taken by phone or at
+    # the box office, so your own checkout can commit the offer. Single-attempt;
+    # a repeat answers the same offer.
+    def create_season_renewal_intent(season_key, offer_id)
+      @client.post(path(season_key, "/renewal-offers/#{encode(offer_id)}/intent"))
+    end
+
+    # Start a SeatLayer checkout that renews an offer, with no hosted page. Send
+    # the buyer to +payment.url+. Retried with one Idempotency-Key, which answers
+    # the same order.
+    def create_season_renewal_checkout(season_key, offer_id, return_url:, buyer_email: nil,
+                                       buyer_name: nil, provider: nil, idempotency_key: nil)
+      @client.post(path(season_key, "/renewal-offers/#{encode(offer_id)}/checkout"),
+                   compact({ "returnUrl" => return_url, "buyerEmail" => buyer_email,
+                             "buyerName" => buyer_name, "provider" => provider }),
+                   idempotency_key: idempotency_key, retry_policy: :header_replay)
     end
 
     # Read the Season's sales report.

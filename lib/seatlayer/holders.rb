@@ -2,7 +2,7 @@
 
 module SeatLayer
   # Season holders and customers: contact details, sessions, tickets, ticket
-  # transfers between holders, and returns.
+  # transfers between holders, returns, and renewals.
   class Holders < Resource
     # One page of customers, or the one matching +email+ or +holder_ref+.
     def list_customers(email: nil, holder_ref: nil, cursor: nil, limit: nil)
@@ -76,6 +76,25 @@ module SeatLayer
     def create_holder_return(holder_ref, ticket_ids:, idempotency_key: nil)
       @client.post(path(holder_ref, "/returns"), { "ticketIds" => ticket_ids },
                    idempotency_key: idempotency_key, retry_policy: :header_replay)
+    end
+
+    # Start a SeatLayer checkout that renews one of a holder's offers (+renewalOffer+
+    # on +list_holder_seasons+). Send the buyer to +payment.url+. Retried with one
+    # Idempotency-Key, which answers the same order.
+    def create_holder_renewal_checkout(holder_ref, offer_id, return_url:, buyer_email: nil,
+                                       buyer_name: nil, provider: nil, idempotency_key: nil)
+      @client.post(path(holder_ref, "/renewal-offers/#{encode(offer_id)}/checkout"),
+                   compact({ "returnUrl" => return_url, "buyerEmail" => buyer_email,
+                             "buyerName" => buyer_name, "provider" => provider }),
+                   idempotency_key: idempotency_key, retry_policy: :header_replay)
+    end
+
+    # Decline one of a holder's renewal offers and release its seats. +reason+
+    # (1 to 200 characters) is kept on the offer as +declineReason+; declining
+    # again answers the same offer, with the first reason. Single-attempt.
+    def decline_holder_renewal_offer(holder_ref, offer_id, reason: nil)
+      @client.post(path(holder_ref, "/renewal-offers/#{encode(offer_id)}/decline"),
+                   compact({ "reason" => reason }))
     end
 
     private
