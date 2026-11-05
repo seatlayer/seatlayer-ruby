@@ -9,12 +9,13 @@
 - Added three resources: `client.holders` (holders, customers, holder tickets and ticket
   transfers), `client.orders` (account and event orders, refunds, cancellations and ticket
   resends) and `client.event_series` (plan, read, extend and update an event series).
+- Added `holders.create_holder_return`: give back a holder's seat on one date, one per ticket.
 - Added the event sales settings to `client.events`: buyer checkout, payment gateway, sales
   readiness, preflight and transition, booking fee, and discount codes.
 - `export_season_holders_csv`, `export_season_orders_csv` and `orders.export_event_orders_csv`
   return the raw CSV text. `delete_season_plan` and `events.delete_event_discount_code` return
   an empty Hash (the API answers 204).
-- 22 of the new operations use exact header replay (36 in the SDK now) and retry with one
+- 23 of the new operations use exact header replay (37 in the SDK now) and retry with one
   `Idempotency-Key`; every other new mutation is single-attempt.
 - `Webhooks::EVENT_NAMES` adds `series.created`, `series.dates_added`, `order.paid`,
   `order.refunded`, `order.cancelled`, `customer.created`, `customer.email_changed`,

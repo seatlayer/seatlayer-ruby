@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module SeatLayer
-  # Season holders and customers: contact details, sessions, tickets and
-  # ticket transfers between holders.
+  # Season holders and customers: contact details, sessions, tickets, ticket
+  # transfers between holders, and returns.
   class Holders < Resource
     # One page of customers, or the one matching +email+ or +holder_ref+.
     def list_customers(email: nil, holder_ref: nil, cursor: nil, limit: nil)
@@ -69,6 +69,13 @@ module SeatLayer
     # Accept a transfer for its recipient. Single-attempt.
     def accept_holder_transfer(holder_ref, transfer_id)
       @client.post(path(holder_ref, "/transfers/#{encode(transfer_id)}/accept"))
+    end
+
+    # Give back a holder's seat on one date, one per ticket: 1 to 20 tickets,
+    # all of one Season. A repeat with the same key answers with the same return.
+    def create_holder_return(holder_ref, ticket_ids:, idempotency_key: nil)
+      @client.post(path(holder_ref, "/returns"), { "ticketIds" => ticket_ids },
+                   idempotency_key: idempotency_key, retry_policy: :header_replay)
     end
 
     private
