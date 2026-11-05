@@ -37,18 +37,22 @@ module SeatLayer
     # Rename a draft, or set how the Season sells. +checkout_mode+ ("seatlayer" or
     # "server") cannot go back to undecided and is fixed once a live booking exists.
     # The cutoffs are hours (0 to 720) before a date starts; pass +nil+ to send an
-    # explicit JSON null, which means until the date starts.
+    # explicit JSON null, which means until the date starts. +audience+ "public" lists
+    # the Season on your SeatLayer website ("embed_only" does not); an ended Season
+    # cannot become public (409 sales_ended).
+    # rubocop:disable Metrics/ParameterLists
     def update_season(season_key, expected_revision:, name: nil, edition: UNSET,
                       checkout_mode: nil, transfer_cutoff_hours: UNSET,
-                      return_cutoff_hours: UNSET, idempotency_key: nil)
+                      return_cutoff_hours: UNSET, audience: nil, idempotency_key: nil)
       body = compact({ "expectedRevision" => expected_revision, "name" => name,
-                       "checkoutMode" => checkout_mode })
+                       "checkoutMode" => checkout_mode, "audience" => audience })
       body.merge!(supplied({ "edition" => edition, "transferCutoffHours" => transfer_cutoff_hours,
                              "returnCutoffHours" => return_cutoff_hours }))
       @client.mutation_with_header_replay(
         "PATCH", path(season_key), body, idempotency_key: idempotency_key
       )
     end
+    # rubocop:enable Metrics/ParameterLists
 
     def delete_season(season_key, idempotency_key: nil)
       @client.mutation_with_header_replay(
@@ -93,6 +97,10 @@ module SeatLayer
                    { "expectedRevision" => expected_revision })
     end
 
+    # Open sales. The answer's "warnings" say what is advised but not required, such
+    # as "checkout_test_missing" until a checkout test or rehearsal has passed.
+    # Refused with 409 plan_not_published or checkout_mode_not_chosen until a package
+    # is published and a checkout mode is chosen.
     def open_season_sales(season_key, expected_revision:)
       sales(season_key, "open", expected_revision)
     end
@@ -224,8 +232,9 @@ module SeatLayer
 
     # Amend one date. +kind+ is "reschedule", "replace", "cancel_exception",
     # "postpone" (no new time yet) or "cancel" (the date will not happen). With
-    # "cancel" only, +refund+ ("none", "per_date" or "full") refunds the date's
-    # SeatLayer orders as a job, and +reason+ is kept on it.
+    # "cancel" only, +refund+ ("none" or "per_date") refunds each SeatLayer order's
+    # share of the date as a job, and +reason+ is kept on it. A whole-order refund
+    # is the order refund.
     def create_season_amendment(season_key, event_key:, kind:, starts_at: nil, name: nil,
                                 refund: nil, reason: nil, idempotency_key: nil)
       @client.post(path(season_key, "/amendments"),
@@ -528,7 +537,8 @@ module SeatLayer
     end
 
     # Refund every SeatLayer order holding a cancelled date, as a job. +amount+ is
-    # "per_date" (the date's share of each order) or "full" (what is left of it).
+    # "per_date" (the date's share of each order); "full" is refused (422
+    # date_refund_per_date_only), so refund a whole order with the order refund.
     # Retried with one Idempotency-Key, which replays the same job.
     def refund_season_performance(season_key, event_key, amount:, reason: nil, idempotency_key: nil)
       @client.post(path(season_key, "/performances/#{encode(event_key)}/refunds"),

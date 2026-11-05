@@ -25,11 +25,15 @@ module SeatLayer
       @client.get(path(event_key))
     end
 
-    # Add dates to a series, copied from its first date. Pass a +schedule+
-    # Hash or a +dates+ list of "YYYY-MM-DDTHH:MM" strings, not both.
-    def add_event_series_dates(event_key, schedule: nil, dates: nil, idempotency_key: nil)
+    # Add dates to a series, copied from its first date. Pass one of a +schedule+
+    # Hash, a +dates+ list of "YYYY-MM-DDTHH:MM" strings, or +retry_failed: true+ to
+    # make again every date that failed to be made (422 nothing_to_retry when none
+    # did, 409 series_busy while another change runs).
+    def add_event_series_dates(event_key, schedule: nil, dates: nil, retry_failed: false,
+                               idempotency_key: nil)
       @client.post(path(event_key, "/dates"),
-                   compact({ "schedule" => schedule, "dates" => dates }),
+                   compact({ "schedule" => schedule, "dates" => dates,
+                             "retryFailed" => (retry_failed ? true : nil) }),
                    idempotency_key: idempotency_key, retry_policy: :header_replay)
     end
 

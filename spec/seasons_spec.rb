@@ -268,7 +268,7 @@ RSpec.describe SeatLayer::Seasons do
                                     "unitPrice" => 9_000 }]
     )
     seasons.update_season("sea_1", expected_revision: 3, checkout_mode: "seatlayer",
-                                   transfer_cutoff_hours: 24, return_cutoff_hours: nil)
+                                   transfer_cutoff_hours: 24, return_cutoff_hours: nil, audience: "public")
     seasons.update_season("sea_1", expected_revision: 4, name: "Renamed")
     seasons.create_season_holder_import(
       "sea_1", successor_plan_activation_id: "pa_1",
@@ -284,8 +284,8 @@ RSpec.describe SeatLayer::Seasons do
       [
         { "prices" => [{ "categoryKey" => "stalls", "unitPrice" => 18_000 },
                        { "categoryKey" => "stalls", "priceTypeKey" => "child", "unitPrice" => 9_000 }] },
-        { "expectedRevision" => 3, "checkoutMode" => "seatlayer", "transferCutoffHours" => 24,
-          "returnCutoffHours" => nil },
+        { "expectedRevision" => 3, "checkoutMode" => "seatlayer", "audience" => "public",
+          "transferCutoffHours" => 24, "returnCutoffHours" => nil },
         { "expectedRevision" => 4, "name" => "Renamed" },
         { "successorPlanActivationId" => "pa_1",
           "rows" => [{ "rowId" => "r1", "holderRef" => "h1", "priorPlanActivationId" => "pa_0",
@@ -303,11 +303,11 @@ RSpec.describe SeatLayer::Seasons do
     client, transport = build_client([{ status: 429, headers: { "Retry-After" => "0" } },
                                       { status: 202, body: '{"job":{"jobId":"sbj_1"}}' }])
 
-    result = client.seasons.refund_season_performance("sea_1", "ev_1", amount: "full")
+    result = client.seasons.refund_season_performance("sea_1", "ev_1", amount: "per_date")
 
     expect(result).to eq({ "job" => { "jobId" => "sbj_1" } })
     expect(transport.calls.length).to eq(2)
-    expect(transport.calls.map { |call| JSON.parse(call.body) }).to all(eq({ "amount" => "full" }))
+    expect(transport.calls.map { |call| JSON.parse(call.body) }).to all(eq({ "amount" => "per_date" }))
     expect(transport.calls[0].headers["Idempotency-Key"])
       .to eq(transport.calls[1].headers["Idempotency-Key"])
   end

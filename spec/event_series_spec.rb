@@ -2,7 +2,7 @@
 
 RSpec.describe SeatLayer::EventSeries do
   it "maps all 5 event series operations and their replay classes" do
-    client, transport = build_client(Array.new(5) { { status: 202 } })
+    client, transport = build_client(Array.new(6) { { status: 202 } })
     series = client.event_series
     schedule = { "rule" => "weekly", "from" => "2027-01-04", "count" => 4, "times" => ["19:30"] }
 
@@ -12,6 +12,7 @@ RSpec.describe SeatLayer::EventSeries do
     series.retrieve_event_series("ev/a")
     series.add_event_series_dates("ev/a", dates: ["2027-02-01T19:30"], idempotency_key: "dates-1")
     series.update_event_series("ev/a", sales: "off")
+    series.add_event_series_dates("ev/a", retry_failed: true)
 
     expect(transport.calls.map { |call| request_summary(call) }).to eq(
       [
@@ -21,7 +22,9 @@ RSpec.describe SeatLayer::EventSeries do
         ["GET /v1/event-series?limit=10&cursor=c%2F1", nil, false],
         ["GET /v1/event-series/ev%2Fa", nil, false],
         ["POST /v1/event-series/ev%2Fa/dates", { "dates" => ["2027-02-01T19:30"] }, true],
-        ["PATCH /v1/event-series/ev%2Fa", { "sales" => "off" }, true]
+        ["PATCH /v1/event-series/ev%2Fa", { "sales" => "off" }, true],
+        # Make again the dates that failed to be made.
+        ["POST /v1/event-series/ev%2Fa/dates", { "retryFailed" => true }, true]
       ]
     )
     expect(transport.calls[3].headers["Idempotency-Key"]).to eq("dates-1")

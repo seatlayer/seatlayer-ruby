@@ -4,10 +4,14 @@ module SeatLayer
   # Orders SeatLayer took through its own checkout: reads, CSV export,
   # refunds, cancellations and ticket resends.
   class Orders < Resource
-    # One page of orders. +from+ and +to+ are epoch milliseconds.
+    # One page of orders. +from+ and +to+ are epoch milliseconds. +holder_ref+ lists
+    # one holder's orders: the Season order with that id and renewals offered to that
+    # reference. Each order carries "holderRef" and "customerId"; "buyer"/"email" is
+    # nil for a box office sale taken without one.
     def list_orders(event_key: nil, season_key: nil, status: nil, from: nil, to: nil,
-                    cursor: nil, limit: nil)
+                    cursor: nil, limit: nil, holder_ref: nil)
       @client.get("/v1/orders", compact({ "eventKey" => event_key, "seasonKey" => season_key,
+                                          "holderRef" => holder_ref,
                                           "status" => status, "from" => from, "to" => to,
                                           "cursor" => cursor, "limit" => limit }))
     end

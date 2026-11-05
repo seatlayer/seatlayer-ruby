@@ -6,7 +6,8 @@ RSpec.describe SeatLayer::Orders do
     orders = client.orders
     event = "ev/a"
 
-    orders.list_orders(season_key: "sea/a", status: "confirmed", from: 1, to: 2, limit: 20)
+    orders.list_orders(season_key: "sea/a", holder_ref: "ord/1", status: "confirmed",
+                       from: 1, to: 2, limit: 20)
     orders.retrieve_order("ord/1")
     orders.list_order_tickets("ord/1")
     orders.list_event_orders(event, search: "ann lee", paid_by: "card", cursor: "c/1")
@@ -21,7 +22,8 @@ RSpec.describe SeatLayer::Orders do
 
     expect(transport.calls.map { |call| request_summary(call) }).to eq(
       [
-        ["GET /v1/orders?seasonKey=sea%2Fa&status=confirmed&from=1&to=2&limit=20", nil, false],
+        ["GET /v1/orders?seasonKey=sea%2Fa&holderRef=ord%2F1&status=confirmed&from=1&to=2&limit=20",
+         nil, false],
         ["GET /v1/orders/ord%2F1", nil, false],
         ["GET /v1/orders/ord%2F1/tickets", nil, false],
         ["GET /v1/events/ev%2Fa/orders?q=ann+lee&paidBy=card&cursor=c%2F1", nil, false],
