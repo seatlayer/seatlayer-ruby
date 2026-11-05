@@ -6,10 +6,23 @@ module SeatLayer
   class EventSeries < Resource
     # Plan an event series from a +schedule+ Hash, or create it as a job.
     # Pass <tt>dry_run: true</tt> to get the dates back without creating any.
-    def create_event_series(name:, chart_key:, schedule:, timezone: nil, venue: nil,
-                            duration_minutes: nil, dry_run: nil, idempotency_key: nil)
-      body = compact({ "name" => name, "chartKey" => chart_key, "schedule" => schedule,
-                       "timezone" => timezone, "venue" => venue,
+    # Every date carries +name+ as its name.
+    #
+    # Give +name+ and +chart_key+, or +from_event_key+: an event you already set
+    # up becomes the first date under its own key, and every other date is a copy
+    # of it (floor plan, prices, checkout, poster and its own seat blocks, none of
+    # its orders, holds or sales). The series takes the event's name, zone and
+    # floor plan.
+    def create_event_series( # rubocop:disable Metrics/ParameterLists
+      schedule:, name: nil, chart_key: nil, timezone: nil, venue: nil,
+      duration_minutes: nil, dry_run: nil, idempotency_key: nil, from_event_key: nil
+    )
+      if from_event_key.nil? && (name.nil? || chart_key.nil?)
+        raise ArgumentError, "give name: and chart_key:, or from_event_key:"
+      end
+
+      body = compact({ "fromEventKey" => from_event_key, "name" => name, "chartKey" => chart_key,
+                       "schedule" => schedule, "timezone" => timezone, "venue" => venue,
                        "durationMinutes" => duration_minutes, "dryRun" => dry_run })
       @client.post("/v1/event-series", body, idempotency_key: idempotency_key,
                                              retry_policy: :header_replay)

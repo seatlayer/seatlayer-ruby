@@ -1,6 +1,17 @@
 # frozen_string_literal: true
 
 RSpec.describe SeatLayer::EventSeries do
+  it "makes a series from an event already set up" do
+    client, transport = build_client([{ status: 202 }])
+    schedule = { "rule" => "daily", "from" => "2026-11-06", "until" => "2026-11-19", "times" => ["14:00"] }
+    client.event_series.create_event_series(schedule: schedule, from_event_key: "lighthouse-keeper")
+    expect(request_summary(transport.calls[0])).to eq(
+      ["POST /v1/event-series", { "fromEventKey" => "lighthouse-keeper", "schedule" => schedule }, true]
+    )
+    expect { client.event_series.create_event_series(schedule: schedule) }
+      .to raise_error(ArgumentError, /from_event_key/)
+  end
+
   it "maps all 5 event series operations and their replay classes" do
     client, transport = build_client(Array.new(6) { { status: 202 } })
     series = client.event_series
