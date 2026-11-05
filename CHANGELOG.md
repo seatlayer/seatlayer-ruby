@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- Added the 32 remaining Fixed Renewable Season operations to `client.seasons` (80 in all):
+  performances, package edits and prices, publishing, checkout tests, occurrence returns and
+  reclaims, holders, Season order refunds and cancellations, hosted renewals, and the sales,
+  seats and seat-count reports.
+- Added three resources: `client.holders` (holders, customers, holder tickets and ticket
+  transfers), `client.orders` (account and event orders, refunds, cancellations and ticket
+  resends) and `client.event_series` (plan, read, extend and update an event series).
+- Added the event sales settings to `client.events`: buyer checkout, payment gateway, sales
+  readiness, preflight and transition, booking fee, and discount codes.
+- `export_season_holders_csv`, `export_season_orders_csv` and `orders.export_event_orders_csv`
+  return the raw CSV text. `delete_season_plan` and `events.delete_event_discount_code` return
+  an empty Hash (the API answers 204).
+- 22 of the new operations use exact header replay (36 in the SDK now) and retry with one
+  `Idempotency-Key`; every other new mutation is single-attempt.
+- `Webhooks::EVENT_NAMES` adds `series.created`, `series.dates_added`, `order.paid`,
+  `order.refunded`, `order.cancelled`, `customer.created`, `customer.email_changed`,
+  `season.ticket.transfer_sent`, `season.ticket.transferred` and
+  `season.ticket.transfer_cancelled`.
+
 ## 0.8.0 (2026-09-10)
 
 - Added Event hosting regions: `region:` on event create, `default_region:` on workspace create and update, and `EVENT_HOSTING_REGIONS` to check a value before it is sent. Events created without a region run in Western Europe.
