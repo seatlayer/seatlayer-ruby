@@ -8,6 +8,9 @@ require_relative "seatlayer/inventory"
 require_relative "seatlayer/channels"
 require_relative "seatlayer/performance_groups"
 require_relative "seatlayer/seasons"
+require_relative "seatlayer/holders"
+require_relative "seatlayer/orders"
+require_relative "seatlayer/event_series"
 require_relative "seatlayer/webhook"
 
 # Official Ruby server SDK for the SeatLayer reserved-seating API.
@@ -22,7 +25,7 @@ module SeatLayer
   # The SeatLayer client.
   class Client
     attr_reader :charts, :events, :inventory, :channels, :performance_groups, :sessions,
-                :seasons, :webhooks, :workspaces, :templates
+                :seasons, :webhooks, :workspaces, :templates, :holders, :orders, :event_series
 
     def initialize(secret_key, base_url: HTTPClient::DEFAULT_BASE_URL,
                    max_retries: HTTPClient::DEFAULT_MAX_RETRIES,
@@ -36,6 +39,9 @@ module SeatLayer
       @channels = Channels.new(@http)
       @performance_groups = PerformanceGroups.new(@http)
       @seasons = Seasons.new(@http)
+      @holders = Holders.new(@http)
+      @orders = Orders.new(@http)
+      @event_series = EventSeries.new(@http)
       @sessions = Sessions.new(@http)
       @templates = Templates.new(@http)
       @webhooks = Webhooks.new(@http)

@@ -207,7 +207,10 @@ module SeatLayer
   class Webhooks < Resource
     EVENT_NAMES = [
       "seat.booked", "seat.released", "seat.blocked", "hold.expired",
-      "hold.created", "hold.extended", "event.created", "event.soldout"
+      "hold.created", "hold.extended", "event.created", "event.soldout",
+      "series.created", "series.dates_added", "order.paid", "order.refunded", "order.cancelled",
+      "customer.created", "customer.email_changed", "season.ticket.transfer_sent",
+      "season.ticket.transferred", "season.ticket.transfer_cancelled"
     ].freeze
 
     def list

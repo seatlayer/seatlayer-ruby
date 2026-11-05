@@ -46,3 +46,13 @@ def build_client(responses, **options)
   client = SeatLayer::Client.new("sk_test_abc", transport: transport.to_proc, **options)
   [client, transport]
 end
+
+# One recorded request as [verb and path with query, decoded JSON body or nil,
+# whether an Idempotency-Key header was sent], for table-style assertions.
+def request_summary(call)
+  [
+    "#{call.http_method} #{call.url.delete_prefix("https://api.seatlayer.io")}",
+    call.body && JSON.parse(call.body),
+    call.headers.key?("Idempotency-Key")
+  ]
+end

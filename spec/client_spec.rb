@@ -772,6 +772,20 @@ RSpec.describe SeatLayer::Client do
       expect(transport.calls[2].url).to end_with("/buyer-access-sessions?limit=25")
     end
 
+    it "accepts the series, order, customer and season ticket webhook events" do
+      added = %w[
+        series.created series.dates_added order.paid order.refunded order.cancelled
+        customer.created customer.email_changed season.ticket.transfer_sent
+        season.ticket.transferred season.ticket.transfer_cancelled
+      ]
+      client, transport = build_client([{ status: 201 }])
+
+      client.webhooks.create(url: "https://hooks.example", events: added)
+
+      expect(SeatLayer::Webhooks::EVENT_NAMES.length).to eq(18)
+      expect(JSON.parse(transport.calls[0].body).fetch("events")).to eq(added)
+    end
+
     it "rejects unknown webhook events before transport" do
       client, = build_client([])
       expect { client.webhooks.create(url: "https://hooks.example", events: ["booking.created"]) }
