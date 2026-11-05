@@ -157,11 +157,14 @@ module SeatLayer
     #
     # Live availability counts cost one round-trip per event server-side. They
     # are on by default because most callers of a single page want them; pass
-    # <tt>counts: false</tt> when paging a whole catalogue.
-    def list(workspace_id: nil, external_ref: nil, limit: nil, cursor: nil, counts: true)
+    # <tt>counts: false</tt> when paging a whole catalogue. +series_key+ lists only
+    # the dates of one event series.
+    def list(workspace_id: nil, external_ref: nil, limit: nil, cursor: nil, counts: true,
+             series_key: nil)
       query = compact({ "workspaceId" => workspace_id, "externalRef" => external_ref,
                         "limit" => limit, "cursor" => cursor })
       query["counts"] = "0" unless counts
+      query["seriesKey"] = series_key unless series_key.nil?
       @client.get("/v1/events", query)
     end
 

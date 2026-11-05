@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-- Added the 32 remaining Fixed Renewable Season operations to `client.seasons` (80 in all):
+- Added the 35 remaining Fixed Renewable Season operations to `client.seasons` (83 in all):
   performances, package edits and prices, publishing, checkout tests, occurrence returns and
-  reclaims, holders, Season order refunds and cancellations, hosted renewals, and the sales,
-  seats and seat-count reports.
+  reclaims, holders, Season order refunds and cancellations, hosted renewals, the sales,
+  seats and seat-count reports, and bulk refunds with their jobs.
 - Added three resources: `client.holders` (holders, customers, holder tickets and ticket
   transfers), `client.orders` (account and event orders, refunds, cancellations and ticket
   resends) and `client.event_series` (plan, read, extend and update an event series).
@@ -15,12 +15,26 @@
 - `export_season_holders_csv`, `export_season_orders_csv` and `orders.export_event_orders_csv`
   return the raw CSV text. `delete_season_plan` and `events.delete_event_discount_code` return
   an empty Hash (the API answers 204).
-- 23 of the new operations use exact header replay (37 in the SDK now) and retry with one
+- 24 of the new operations use exact header replay (38 in the SDK now) and retry with one
   `Idempotency-Key`; every other new mutation is single-attempt.
 - `Webhooks::EVENT_NAMES` adds `series.created`, `series.dates_added`, `order.paid`,
   `order.refunded`, `order.cancelled`, `customer.created`, `customer.email_changed`,
   `season.ticket.transfer_sent`, `season.ticket.transferred` and
   `season.ticket.transfer_cancelled`.
+- Added `seasons.refund_season_performance` (refund every order of a cancelled date as a job,
+  with header replay), `seasons.list_season_bulk_jobs`, and `seasons.retrieve_season_bulk_job`.
+- `create_season_amendment` takes `refund:` and `reason:`, for the new `postpone` and `cancel`
+  kinds.
+- `update_season` takes `checkout_mode:`, `transfer_cutoff_hours:`, and `return_cutoff_hours:`
+  (`nil` sends an explicit null).
+- `replace_season_package_prices` documents `"priceTypeKey"` on each price, and
+  `create_season_holder_import` documents `"holderEmail"` and `"holderName"` on each row.
+- `Webhooks::EVENT_NAMES` lists all 56 public event names, adding `object.resale.*`,
+  `season.occurrence.*`, `season.performance.*` (including `postponed`, `cancelled`, and
+  `rescheduled`), `season.bulk_action.completed`, `season.order.*`, `season.ticket.issued`,
+  `season.ticket.voided`, and the Season lifecycle, hold, booking, renewal, operation and
+  amendment events.
+- `events.list` and `events.list_all` take `series_key:` to list one event series' dates.
 
 ## 0.8.0 (2026-09-10)
 

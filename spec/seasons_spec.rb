@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe SeatLayer::Seasons do
-  it "maps all 80 Season operations and their exact replay classes" do
-    client, transport = build_client(Array.new(80) { { status: 200 } })
+  it "maps all 83 Season operations and their exact replay classes" do
+    client, transport = build_client(Array.new(83) { { status: 200 } })
     seasons = client.seasons
     key = "sea/a"
 
@@ -112,6 +112,10 @@ RSpec.describe SeatLayer::Seasons do
     seasons.export_season_holders_csv(key, search: "ann", status: "renewal")
     seasons.export_season_orders_csv(key)
     seasons.retrieve_season_seat_counts(key)
+    seasons.refund_season_performance(key, "ev/3", amount: "per_date", reason: "Storm",
+                                                   idempotency_key: "refund-date-1")
+    seasons.list_season_bulk_jobs(key)
+    seasons.retrieve_season_bulk_job(key, "job/1")
 
     expected = [
       "GET /v1/seasons?workspaceId=ws+1&structureState=draft&limit=20&cursor=c%2F1",
@@ -165,7 +169,9 @@ RSpec.describe SeatLayer::Seasons do
       "POST /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/resend",
       "GET /v1/seasons/sea%2Fa/reports/sales", "GET /v1/seasons/sea%2Fa/reports/seats",
       "GET /v1/seasons/sea%2Fa/reports/holders.csv?q=ann&status=renewal",
-      "GET /v1/seasons/sea%2Fa/reports/orders.csv", "GET /v1/seasons/sea%2Fa/seat-counts"
+      "GET /v1/seasons/sea%2Fa/reports/orders.csv", "GET /v1/seasons/sea%2Fa/seat-counts",
+      "POST /v1/seasons/sea%2Fa/performances/ev%2F3/refunds", "GET /v1/seasons/sea%2Fa/jobs",
+      "GET /v1/seasons/sea%2Fa/jobs/job%2F1"
     ]
     actual = transport.calls.map do |call|
       "#{call.http_method} #{call.url.delete_prefix("https://api.seatlayer.io")}"
@@ -191,12 +197,13 @@ RSpec.describe SeatLayer::Seasons do
         { "reason" => "other", "note" => "Duplicate", "notifyBuyer" => false },
         { "actionId" => "date_1" }, { "email" => "ann@example.com" }, nil, nil,
         { "email" => "ann@example.com", "name" => nil }, { "offerIds" => ["offer/1"] },
-        nil, nil, nil, nil, nil, nil
+        nil, nil, nil, nil, nil, nil,
+        { "amount" => "per_date", "reason" => "Storm" }, nil, nil
       ]
     )
 
     replay_indexes = [2, 4, 5, 10, 18, 27, 29, 38, 48, 50, 51, 52, 53, 54, 55, 56, 58, 60, 61, 62,
-                      66, 67, 68]
+                      66, 67, 68, 80]
     transport.calls.each_with_index do |call, index|
       if replay_indexes.include?(index)
         expect(call.headers).to have_key("Idempotency-Key")
@@ -204,6 +211,61 @@ RSpec.describe SeatLayer::Seasons do
         expect(call.headers).not_to have_key("Idempotency-Key")
       end
     end
+    expect(transport.calls[80].headers["Idempotency-Key"]).to eq("refund-date-1")
+  end
+
+  it "sends price types, sale settings, holder contacts and date cancels on the wire" do
+    client, transport = build_client(Array.new(6) { { status: 200 } })
+    seasons = client.seasons
+
+    seasons.replace_season_package_prices(
+      "sea_1", "plan_1", prices: [{ "categoryKey" => "stalls", "unitPrice" => 18_000 },
+                                  { "categoryKey" => "stalls", "priceTypeKey" => "child",
+                                    "unitPrice" => 9_000 }]
+    )
+    seasons.update_season("sea_1", expected_revision: 3, checkout_mode: "seatlayer",
+                                   transfer_cutoff_hours: 24, return_cutoff_hours: nil)
+    seasons.update_season("sea_1", expected_revision: 4, name: "Renamed")
+    seasons.create_season_holder_import(
+      "sea_1", successor_plan_activation_id: "pa_1",
+               rows: [{ "rowId" => "r1", "holderRef" => "h1", "priorPlanActivationId" => "pa_0",
+                        "priorContractRef" => "c1", "labels" => ["A-1"],
+                        "holderEmail" => "ana@example.com", "holderName" => "Ana Silva" }]
+    )
+    seasons.create_season_amendment("sea_1", event_key: "ev_night_3", kind: "cancel", refund: "per_date",
+                                             reason: "Storm", idempotency_key: "night-3-storm")
+    seasons.create_season_amendment("sea_1", event_key: "ev_1", kind: "postpone")
+
+    expect(transport.calls.map { |call| JSON.parse(call.body) }).to eq(
+      [
+        { "prices" => [{ "categoryKey" => "stalls", "unitPrice" => 18_000 },
+                       { "categoryKey" => "stalls", "priceTypeKey" => "child", "unitPrice" => 9_000 }] },
+        { "expectedRevision" => 3, "checkoutMode" => "seatlayer", "transferCutoffHours" => 24,
+          "returnCutoffHours" => nil },
+        { "expectedRevision" => 4, "name" => "Renamed" },
+        { "successorPlanActivationId" => "pa_1",
+          "rows" => [{ "rowId" => "r1", "holderRef" => "h1", "priorPlanActivationId" => "pa_0",
+                       "priorContractRef" => "c1", "labels" => ["A-1"],
+                       "holderEmail" => "ana@example.com", "holderName" => "Ana Silva" }] },
+        { "eventKey" => "ev_night_3", "kind" => "cancel", "refund" => "per_date", "reason" => "Storm" },
+        { "eventKey" => "ev_1", "kind" => "postpone" }
+      ]
+    )
+    expect(transport.calls[1].body).to include('"returnCutoffHours":null')
+    expect(transport.calls[4].headers["Idempotency-Key"]).to eq("night-3-storm")
+  end
+
+  it "retries a bulk refund of a date with one key" do
+    client, transport = build_client([{ status: 429, headers: { "Retry-After" => "0" } },
+                                      { status: 202, body: '{"job":{"jobId":"sbj_1"}}' }])
+
+    result = client.seasons.refund_season_performance("sea_1", "ev_1", amount: "full")
+
+    expect(result).to eq({ "job" => { "jobId" => "sbj_1" } })
+    expect(transport.calls.length).to eq(2)
+    expect(transport.calls.map { |call| JSON.parse(call.body) }).to all(eq({ "amount" => "full" }))
+    expect(transport.calls[0].headers["Idempotency-Key"])
+      .to eq(transport.calls[1].headers["Idempotency-Key"])
   end
 
   it "returns the Season CSV exports as raw text" do

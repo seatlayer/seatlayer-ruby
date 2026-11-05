@@ -6,7 +6,7 @@ module SeatLayer
   # Browser selection belongs in the distinct SeasonPicker. Give it only the
   # show-once scoped token returned by +create_season_buyer_access_session+.
   #
-  # One thin method per public Season operation (80 of them), so the class is
+  # One thin method per public Season operation (83 of them), so the class is
   # long by design rather than doing too much.
   # rubocop:disable-next Metrics/ClassLength
   class Seasons < Resource
@@ -34,10 +34,17 @@ module SeatLayer
       @client.get(path(season_key))
     end
 
+    # Rename a draft, or set how the Season sells. +checkout_mode+ ("seatlayer" or
+    # "server") cannot go back to undecided and is fixed once a live booking exists.
+    # The cutoffs are hours (0 to 720) before a date starts; pass +nil+ to send an
+    # explicit JSON null, which means until the date starts.
     def update_season(season_key, expected_revision:, name: nil, edition: UNSET,
-                      idempotency_key: nil)
-      body = compact({ "expectedRevision" => expected_revision, "name" => name })
-      body.merge!(supplied({ "edition" => edition }))
+                      checkout_mode: nil, transfer_cutoff_hours: UNSET,
+                      return_cutoff_hours: UNSET, idempotency_key: nil)
+      body = compact({ "expectedRevision" => expected_revision, "name" => name,
+                       "checkoutMode" => checkout_mode })
+      body.merge!(supplied({ "edition" => edition, "transferCutoffHours" => transfer_cutoff_hours,
+                             "returnCutoffHours" => return_cutoff_hours }))
       @client.mutation_with_header_replay(
         "PATCH", path(season_key), body, idempotency_key: idempotency_key
       )
@@ -151,6 +158,9 @@ module SeatLayer
       @client.post(path(season_key, "/buyer-rehearsals/validate"))
     end
 
+    # Import incumbent holders. Each row hash takes "rowId", "holderRef",
+    # "priorPlanActivationId", "priorContractRef" and "labels", plus optional
+    # "existingBookingRef", "holderEmail" and "holderName".
     def create_season_holder_import(season_key, successor_plan_activation_id:, rows:,
                                     dry_run: UNSET, idempotency_key: nil)
       body = { "successorPlanActivationId" => successor_plan_activation_id, "rows" => rows }
@@ -208,11 +218,16 @@ module SeatLayer
       @client.get(path(season_key, "/occurrences"))
     end
 
+    # Amend one date. +kind+ is "reschedule", "replace", "cancel_exception",
+    # "postpone" (no new time yet) or "cancel" (the date will not happen). With
+    # "cancel" only, +refund+ ("none", "per_date" or "full") refunds the date's
+    # SeatLayer orders as a job, and +reason+ is kept on it.
     def create_season_amendment(season_key, event_key:, kind:, starts_at: nil, name: nil,
-                                idempotency_key: nil)
+                                refund: nil, reason: nil, idempotency_key: nil)
       @client.post(path(season_key, "/amendments"),
                    compact({ "eventKey" => event_key, "kind" => kind,
-                             "startsAt" => starts_at, "name" => name }),
+                             "startsAt" => starts_at, "name" => name,
+                             "refund" => refund, "reason" => reason }),
                    idempotency_key: idempotency_key, retry_policy: :header_replay)
     end
 
@@ -334,7 +349,9 @@ module SeatLayer
       @client.get(path(season_key, "/checkout-tests"))
     end
 
-    # Replace every price of one package.
+    # Replace every price of one package. Each price hash takes "categoryKey" and
+    # "unitPrice" (minor units), plus an optional "priceTypeKey": "adult" (the
+    # default), "child", "concession", "senior" or "student".
     def replace_season_package_prices(season_key, plan_key, prices:, currency: nil,
                                       idempotency_key: nil)
       @client.mutation_with_header_replay(
@@ -343,7 +360,8 @@ module SeatLayer
       )
     end
 
-    # List the prices of every package in the Season.
+    # List the prices of every package in the Season, each with its
+    # "priceTypeKey" and "priceTypeLabel".
     def list_season_prices(season_key)
       @client.get(path(season_key, "/prices"))
     end
@@ -479,6 +497,25 @@ module SeatLayer
     # Read the Season's seat counts.
     def retrieve_season_seat_counts(season_key)
       @client.get(path(season_key, "/seat-counts"))
+    end
+
+    # Refund every SeatLayer order holding a cancelled date, as a job. +amount+ is
+    # "per_date" (the date's share of each order) or "full" (what is left of it).
+    # Retried with one Idempotency-Key, which replays the same job.
+    def refund_season_performance(season_key, event_key, amount:, reason: nil, idempotency_key: nil)
+      @client.post(path(season_key, "/performances/#{encode(event_key)}/refunds"),
+                   compact({ "amount" => amount, "reason" => reason }),
+                   idempotency_key: idempotency_key, retry_policy: :header_replay)
+    end
+
+    # List the Season's bulk jobs, newest first (100 at most).
+    def list_season_bulk_jobs(season_key)
+      @client.get(path(season_key, "/jobs"))
+    end
+
+    # Read one bulk job with its counts and up to 500 failed items.
+    def retrieve_season_bulk_job(season_key, job_id)
+      @client.get(path(season_key, "/jobs/#{encode(job_id)}"))
     end
 
     private

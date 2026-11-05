@@ -86,10 +86,13 @@ Nullable event-create fields distinguish omission from an explicit reset: passin
 
 ## Fixed Renewable Seasons
 
-`client.seasons` exposes all 80 trusted organizer operations: catalogue and
-package lifecycle, performances, prices, checkout tests, sales windows, buyer
-access and booking, holder imports, renewals, occurrences, Season orders,
-reports and CSV exports.
+`client.seasons` exposes all 83 trusted organizer operations: catalogue and
+package lifecycle, performances, prices (each price hash may name a
+`"priceTypeKey"`: `adult`, `child`, `concession`, `senior` or `student`),
+checkout tests, sales windows, buyer access and booking, holder imports,
+renewals, occurrences, Season orders, reports and CSV exports, and the bulk
+refund of a cancelled date (`refund_season_performance`) with its jobs
+(`list_season_bulk_jobs`, `retrieve_season_bulk_job`).
 
 After the test hold/book/cancel journey and matching webhook deliveries,
 `validate_season_buyer_rehearsal(season_key)` sends no evidence body; SeatLayer
@@ -226,6 +229,8 @@ exactly when you don't want that, and you can control it explicitly:
 client.events.list(limit: 50, counts: false)
 ```
 
+Pass `series_key: "ser_1"` to list only the dates of one event series.
+
 ## Keeping a hold alive
 
 When an order takes longer than the checkout window (an invoice, a phone sale), extend rather than
@@ -284,7 +289,7 @@ feature policy under `result["session"]`. Pass `safe_mode_options` only with `mo
 
 Subscription responses use the wire envelopes exactly: `list` returns `{"subs" => [...]}`,
 `create` returns `{"sub" => ..., "secret" => ...}` (the secret is shown once), and `update`
-returns `{"sub" => ...}`. `SeatLayer::Webhooks::EVENT_NAMES` is the exact eighteen-name event set;
+returns `{"sub" => ...}`. `SeatLayer::Webhooks::EVENT_NAMES` is the exact 56-name public event set;
 delivery history accepts `limit`, `status` (`"ok"` or `"failed"`), and `before`.
 
 Verify every delivery against the **raw** body. Re-encoding a parsed Hash changes the bytes and
@@ -346,18 +351,18 @@ error carries `status`, `code`, `body` and `request_id`. Quote the request id in
 ## Reliability
 
 **Retries.** Reads (`GET`/`HEAD`) retry 429, 408 and 5xx with exponential backoff and full jitter;
-`Retry-After` wins when the server sends it. Thirty-seven mutations use exact header replay:
+`Retry-After` wins when the server sends it. Thirty-eight mutations use exact header replay:
 
 - `charts.create`, `charts.copy`, `templates.instantiate_template`, `events.create`,
   `workspaces.create`, and `performance_groups.create`;
-- 23 on `seasons`: `create_season`, `update_season`, `delete_season`, `create_season_plan`,
+- 24 on `seasons`: `create_season`, `update_season`, `delete_season`, `create_season_plan`,
   `update_season_plan`, `delete_season_plan`, `publish_season`, `duplicate_season_to_live`,
   `create_season_holder_import`, `create_season_holder_import_from_season`,
   `create_season_renewal_offers`, `create_season_amendment`, `create_season_performances`,
   `attach_season_performances`, `delete_season_performance`, `create_season_checkout_test`,
   `replace_season_package_prices`, `attach_season_plan_performance`,
   `delete_season_plan_performance`, `mark_season_performance_past`, `refund_season_order`,
-  `cancel_season_order`, and `cancel_season_order_date`;
+  `cancel_season_order`, `cancel_season_order_date`, and `refund_season_performance`;
 - `holders.update_holder`, `holders.create_holder_transfer`, and `holders.create_holder_return`;
 - `orders.refund_event_order` and `orders.cancel_event_order`;
 - `event_series.create_event_series`, `event_series.add_event_series_dates`, and
@@ -365,7 +370,7 @@ error carries `status`, `code`, `body` and `request_id`. Quote the request id in
 
 Other 4xx responses are never retried.
 
-**Idempotency.** Those 37 replay-backed operations carry an `Idempotency-Key`, generated when you
+**Idempotency.** Those 38 replay-backed operations carry an `Idempotency-Key`, generated when you
 do not supply one and reused across attempts. All remaining SDK mutations are single-attempt. Some
 have a server-side domain idempotency contract, but the SDK does not retry them automatically. This
 includes inventory holds and bookings, show-once credential or secret creation, unsupported
@@ -410,7 +415,7 @@ outbox, and support operations.
 | `webhooks` | `list` `create` `update` `delete` `list_deliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 | `performance_groups` | `list` `create` `retrieve` `delete` `activate` `close` `retrieve_lifecycle` `create_buyer_access_session` `list_buyer_access_sessions` `revoke_buyer_access_session` `retrieve_hold` `book_hold` `retrieve_booking` |
-| `seasons` | 80 operations for catalogue and Plan lifecycle, performances, package prices, checkout tests, sales windows, buyer access and booking, holder imports, holders, renewals, occurrence amendments, returns and reclaims, Season orders, reports and CSV exports, audit, outbox, and support export |
+| `seasons` | 83 operations for catalogue and Plan lifecycle, performances, package prices, checkout tests, sales windows, buyer access and booking, holder imports, holders, renewals, occurrence amendments, returns and reclaims, Season orders, bulk refunds and jobs, reports and CSV exports, audit, outbox, and support export |
 | `holders` | `list_customers` `retrieve_holder` `update_holder` `revoke_holder_sessions` `list_holder_seasons` `list_holder_tickets` `retrieve_holder_ticket` `create_holder_transfer` `list_holder_transfers` `cancel_holder_transfer` `accept_holder_transfer` `create_holder_return` |
 | `orders` | `list_orders` `retrieve_order` `list_order_tickets` `list_event_orders` `retrieve_event_order` `export_event_orders_csv` `refund_event_order` `cancel_event_order` `resend_event_order_tickets` |
 | `event_series` | `create_event_series` `list_event_series` `retrieve_event_series` `add_event_series_dates` `update_event_series` |

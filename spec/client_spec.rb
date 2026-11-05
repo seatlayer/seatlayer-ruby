@@ -378,6 +378,15 @@ RSpec.describe SeatLayer::Client do
       expect(transport.calls[0].url).to include("counts=0")
     end
 
+    it "filters events by series" do
+      client, transport = build_client([{ status: 200, body: '{"events":[]}' },
+                                        { status: 200, body: '{"events":[]}' }])
+      client.events.list(limit: 10, series_key: "ser a/b")
+      client.events.list_all(series_key: "ser_1").to_a
+      expect(transport.calls[0].url).to end_with("/v1/events?limit=10&seriesKey=ser+a%2Fb")
+      expect(transport.calls[1].url).to include("seriesKey=ser_1")
+    end
+
     it "keeps counts on a single explicit page" do
       client, transport = build_client([{ status: 200, body: '{"events":[]}' }])
       client.events.list(limit: 10)
@@ -782,8 +791,38 @@ RSpec.describe SeatLayer::Client do
 
       client.webhooks.create(url: "https://hooks.example", events: added)
 
-      expect(SeatLayer::Webhooks::EVENT_NAMES.length).to eq(18)
+      expect(SeatLayer::Webhooks::EVENT_NAMES.length).to eq(56)
       expect(JSON.parse(transport.calls[0].body).fetch("events")).to eq(added)
+    end
+
+    it "accepts every public webhook event name, including the 2.11 date and bulk job events" do
+      public_names = %w[
+        seat.booked seat.released seat.blocked
+        hold.expired hold.created hold.extended
+        event.created event.soldout object.resale.listed
+        object.resale.unlisted object.resale.sold customer.created
+        customer.email_changed order.paid order.refunded
+        order.cancelled season.ticket.transfer_sent season.ticket.transferred
+        season.ticket.transfer_cancelled season.ticket.issued season.ticket.voided
+        season.structure.activated season.structure.closed season.structure.archived
+        season.plan.published season.plan.superseded season.sales.opened
+        season.sales.paused season.sales.ended season.hold.committed
+        season.hold.released season.hold.expired season.booking.confirmed
+        season.booking.cancelled season.booking.emergency_requested season.occurrence.returned
+        season.occurrence.reclaimed season.renewal.offered season.renewal.intent_received
+        season.renewal.renewed season.renewal.declined season.renewal.lapsed
+        season.renewal.released season.operation.partial_terminal season.amendment.applied
+        season.performance.added season.performance.removed season.performance.past
+        season.performance.postponed season.performance.cancelled season.performance.rescheduled
+        season.bulk_action.completed season.order.paid season.order.refunded
+        series.created series.dates_added
+      ]
+      client, transport = build_client([{ status: 201 }])
+
+      client.webhooks.create(url: "https://hooks.example", events: public_names)
+
+      expect(SeatLayer::Webhooks::EVENT_NAMES).to eq(public_names)
+      expect(JSON.parse(transport.calls[0].body).fetch("events").length).to eq(56)
     end
 
     it "rejects unknown webhook events before transport" do
