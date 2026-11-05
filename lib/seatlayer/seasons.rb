@@ -40,10 +40,10 @@ module SeatLayer
     # explicit JSON null, which means until the date starts. +audience+ "public" lists
     # the Season on your SeatLayer website ("embed_only" does not); an ended Season
     # cannot become public (409 sales_ended).
-    # rubocop:disable Metrics/ParameterLists
-    def update_season(season_key, expected_revision:, name: nil, edition: UNSET,
-                      checkout_mode: nil, transfer_cutoff_hours: UNSET,
-                      return_cutoff_hours: UNSET, audience: nil, idempotency_key: nil)
+    def update_season( # rubocop:disable Metrics/ParameterLists
+      season_key, expected_revision:, name: nil, edition: UNSET, checkout_mode: nil,
+      transfer_cutoff_hours: UNSET, return_cutoff_hours: UNSET, audience: nil, idempotency_key: nil
+    )
       body = compact({ "expectedRevision" => expected_revision, "name" => name,
                        "checkoutMode" => checkout_mode, "audience" => audience })
       body.merge!(supplied({ "edition" => edition, "transferCutoffHours" => transfer_cutoff_hours,
@@ -52,7 +52,6 @@ module SeatLayer
         "PATCH", path(season_key), body, idempotency_key: idempotency_key
       )
     end
-    # rubocop:enable Metrics/ParameterLists
 
     def delete_season(season_key, idempotency_key: nil)
       @client.mutation_with_header_replay(
