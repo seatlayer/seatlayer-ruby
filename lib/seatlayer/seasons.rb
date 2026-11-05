@@ -6,7 +6,7 @@ module SeatLayer
   # Browser selection belongs in the distinct SeasonPicker. Give it only the
   # show-once scoped token returned by +create_season_buyer_access_session+.
   #
-  # One thin method per public Season operation (86 of them), so the class is
+  # One thin method per public Season operation (87 of them), so the class is
   # long by design rather than doing too much.
   # rubocop:disable-next Metrics/ClassLength
   class Seasons < Resource
@@ -180,6 +180,10 @@ module SeatLayer
       @client.get(path(season_key, "/imports/#{encode(import_id)}"))
     end
 
+    # Answers 201 {"offers"} for 100 contracts or fewer. Above 100 it answers 202
+    # {"job", "batchId"}: a renewal_run job makes the offers. Follow it with
+    # +retrieve_season_bulk_job+, then page the offers with +list_season_renewal_offers+.
+    # Retried with one Idempotency-Key, which answers the same job.
     def create_season_renewal_offers(season_key, deadline_at:,
                                      successor_plan_activation_id: nil, contract_ids: nil,
                                      idempotency_key: nil)
@@ -189,8 +193,10 @@ module SeatLayer
                    idempotency_key: idempotency_key, retry_policy: :header_replay)
     end
 
-    def list_season_renewal_offers(season_key)
-      @client.get(path(season_key, "/renewal-offers"))
+    # One page of renewal offers, newest first. Pass +cursor+ from the previous
+    # page's +nextCursor+ (nil on the last page); +limit+ is 1 to 100 (default 100).
+    def list_season_renewal_offers(season_key, cursor: nil, limit: nil)
+      @client.get(path(season_key, "/renewal-offers"), compact({ "cursor" => cursor, "limit" => limit }))
     end
 
     def retrieve_season_renewal_offer(season_key, offer_id)
@@ -281,6 +287,9 @@ module SeatLayer
     end
 
     # Dry-run or commit renewal rights derived from a previous Season's holders.
+    # A commit of more than 100 holders answers 202 {"job"}: a holder_import job
+    # brings them across, and its +summary+ has the same counts once it completes.
+    # Retried with one Idempotency-Key, which answers the same job.
     def create_season_holder_import_from_season(season_key, source_season_id:,
                                                 successor_plan_activation_id:, dry_run: UNSET,
                                                 idempotency_key: nil)
@@ -458,9 +467,11 @@ module SeatLayer
                    compact({ "email" => email }))
     end
 
-    # Read the state of hosted renewals for the Season.
-    def retrieve_season_hosted_renewals(season_key)
-      @client.get(path(season_key, "/renewal-hosted"))
+    # Read the state of hosted renewals for one page of offers, newest first. Pass
+    # +cursor+ from the previous page's +nextCursor+ (nil on the last page); +limit+
+    # is 1 to 500 (default 500).
+    def retrieve_season_hosted_renewals(season_key, cursor: nil, limit: nil)
+      @client.get(path(season_key, "/renewal-hosted"), compact({ "cursor" => cursor, "limit" => limit }))
     end
 
     # Replace a renewal offer's link. The new link is shown once, so this is
@@ -475,7 +486,8 @@ module SeatLayer
                    supplied({ "email" => email, "name" => name }))
     end
 
-    # Send renewal notices, to every open offer or only to +offer_ids+.
+    # Send renewal notices, to every open offer or only to +offer_ids+ (at most
+    # 20,000; more is refused with 422 too_many_offer_ids).
     def create_season_renewal_notices(season_key, offer_ids: nil)
       @client.post(path(season_key, "/renewal-notices"), compact({ "offerIds" => offer_ids }))
     end
@@ -542,6 +554,14 @@ module SeatLayer
     def refund_season_performance(season_key, event_key, amount:, reason: nil, idempotency_key: nil)
       @client.post(path(season_key, "/performances/#{encode(event_key)}/refunds"),
                    compact({ "amount" => amount, "reason" => reason }),
+                   idempotency_key: idempotency_key, retry_policy: :header_replay)
+    end
+
+    # Release the seats of every lapsed renewal offer, as a job; an offer extended
+    # before its turn is skipped and keeps its seat. Follow it with
+    # +retrieve_season_bulk_job+. Retried with one Idempotency-Key, which replays the same job.
+    def release_season_lapsed_offers(season_key, idempotency_key: nil)
+      @client.post(path(season_key, "/renewal-offers/release-lapsed"), nil,
                    idempotency_key: idempotency_key, retry_policy: :header_replay)
     end
 

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe SeatLayer::Seasons do
-  it "maps all 86 Season operations and their exact replay classes" do
-    client, transport = build_client(Array.new(86) { { status: 200 } })
+  it "maps all 87 Season operations and their exact replay classes" do
+    client, transport = build_client(Array.new(87) { { status: 200 } })
     seasons = client.seasons
     key = "sea/a"
 
@@ -122,6 +122,7 @@ RSpec.describe SeatLayer::Seasons do
       key, "offer/1", return_url: "https://tickets.example/renewed", buyer_email: "ana@example.com",
                       buyer_name: "Ana Silva", provider: "stripe", idempotency_key: "renew-1"
     )
+    seasons.release_season_lapsed_offers(key, idempotency_key: "release-lapsed-1")
 
     expected = [
       "GET /v1/seasons?workspaceId=ws+1&structureState=draft&limit=20&cursor=c%2F1",
@@ -180,7 +181,8 @@ RSpec.describe SeatLayer::Seasons do
       "GET /v1/seasons/sea%2Fa/jobs/job%2F1",
       "GET /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/quote",
       "POST /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/intent",
-      "POST /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/checkout"
+      "POST /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/checkout",
+      "POST /v1/seasons/sea%2Fa/renewal-offers/release-lapsed"
     ]
     actual = transport.calls.map do |call|
       "#{call.http_method} #{call.url.delete_prefix("https://api.seatlayer.io")}"
@@ -210,12 +212,13 @@ RSpec.describe SeatLayer::Seasons do
         { "amount" => "per_date", "reason" => "Storm" }, nil, nil,
         nil, nil,
         { "returnUrl" => "https://tickets.example/renewed", "buyerEmail" => "ana@example.com",
-          "buyerName" => "Ana Silva", "provider" => "stripe" }
+          "buyerName" => "Ana Silva", "provider" => "stripe" },
+        nil
       ]
     )
 
     replay_indexes = [2, 4, 5, 10, 18, 27, 29, 38, 48, 50, 51, 52, 53, 54, 55, 56, 58, 60, 61, 62,
-                      66, 67, 68, 80, 85]
+                      66, 67, 68, 80, 85, 86]
     transport.calls.each_with_index do |call, index|
       if replay_indexes.include?(index)
         expect(call.headers).to have_key("Idempotency-Key")
@@ -225,6 +228,7 @@ RSpec.describe SeatLayer::Seasons do
     end
     expect(transport.calls[80].headers["Idempotency-Key"]).to eq("refund-date-1")
     expect(transport.calls[85].headers["Idempotency-Key"]).to eq("renew-1")
+    expect(transport.calls[86].headers["Idempotency-Key"]).to eq("release-lapsed-1")
   end
 
   it "sends the decline reason, and retries a renewal checkout with one key but not the intent" do
@@ -310,6 +314,70 @@ RSpec.describe SeatLayer::Seasons do
     expect(transport.calls.map { |call| JSON.parse(call.body) }).to all(eq({ "amount" => "per_date" }))
     expect(transport.calls[0].headers["Idempotency-Key"])
       .to eq(transport.calls[1].headers["Idempotency-Key"])
+  end
+
+  it "retries a release of lapsed offers with one key and sends no body" do
+    client, transport = build_client([{ status: 503, body: '{"code":"job_busy"}' },
+                                      { status: 202, body: '{"job":{"jobId":"sbj_2"}}' }])
+
+    result = client.seasons.release_season_lapsed_offers("sea/a")
+
+    expect(result).to eq({ "job" => { "jobId" => "sbj_2" } })
+    expect(transport.calls.map { |call| request_summary(call) }).to eq(
+      Array.new(2) { ["POST /v1/seasons/sea%2Fa/renewal-offers/release-lapsed", nil, true] }
+    )
+    expect(transport.calls[0].headers["Idempotency-Key"])
+      .to eq(transport.calls[1].headers["Idempotency-Key"])
+  end
+
+  it "pages hosted renewals and renewal offers with cursor and limit" do
+    responses = [
+      { status: 200, body: '{"offers":[],"nextCursor":"c/3"}' },
+      { status: 200, body: '{"offers":[],"truncated":false,"nextCursor":null}' },
+      { status: 200 }, { status: 200 }
+    ]
+    client, transport = build_client(responses)
+    seasons = client.seasons
+
+    hosted = seasons.retrieve_season_hosted_renewals("sea/a", cursor: "c/1", limit: 500)
+    offers = seasons.list_season_renewal_offers("sea/a", cursor: "c/2", limit: 100)
+    seasons.retrieve_season_hosted_renewals("sea/a", limit: 1)
+    seasons.list_season_renewal_offers("sea/a", cursor: "c/4")
+
+    expect(hosted["nextCursor"]).to eq("c/3")
+    expect(offers["nextCursor"]).to be_nil
+    expect(transport.calls.map { |call| request_summary(call) }).to eq(
+      [
+        ["GET /v1/seasons/sea%2Fa/renewal-hosted?cursor=c%2F1&limit=500", nil, false],
+        ["GET /v1/seasons/sea%2Fa/renewal-offers?cursor=c%2F2&limit=100", nil, false],
+        ["GET /v1/seasons/sea%2Fa/renewal-hosted?limit=1", nil, false],
+        ["GET /v1/seasons/sea%2Fa/renewal-offers?cursor=c%2F4", nil, false]
+      ]
+    )
+  end
+
+  it "returns the job a renewal run or a bring-across of more than 100 starts" do
+    responses = [
+      { status: 202, body: '{"job":{"jobId":"sbj_3","kind":"renewal_run"},"batchId":"srb_1"}' },
+      { status: 202, body: '{"job":{"jobId":"sbj_4","kind":"holder_import"}}' },
+      { status: 422, body: '{"error":"too_many_offer_ids"}' }
+    ]
+    client, transport = build_client(responses)
+    seasons = client.seasons
+
+    run = seasons.create_season_renewal_offers("sea/a", deadline_at: 123, idempotency_key: "offers-2")
+    import = seasons.create_season_holder_import_from_season(
+      "sea/a", source_season_id: "sea_old", successor_plan_activation_id: "pa_2",
+               idempotency_key: "from-season-2"
+    )
+    expect { seasons.create_season_renewal_notices("sea/a", offer_ids: Array.new(20_001) { |i| "o_#{i}" }) }
+      .to raise_error(SeatLayer::ValidationError) { |error| expect(error.code).to eq("too_many_offer_ids") }
+
+    expect(run).to eq({ "job" => { "jobId" => "sbj_3", "kind" => "renewal_run" }, "batchId" => "srb_1" })
+    expect(import).to eq({ "job" => { "jobId" => "sbj_4", "kind" => "holder_import" } })
+    expect(transport.calls.map { |call| call.headers["Idempotency-Key"] })
+      .to eq(["offers-2", "from-season-2", nil])
+    expect(JSON.parse(transport.calls[2].body)["offerIds"].length).to eq(20_001)
   end
 
   it "returns the Season CSV exports as raw text" do
