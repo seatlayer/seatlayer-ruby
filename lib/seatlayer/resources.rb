@@ -252,6 +252,8 @@ module SeatLayer
       @client.post("/v1/events/#{encode(event_key)}/close")
     end
 
+    # Open a paused event's sales again. A date its season cancelled never opens
+    # again: 409 season_date_cancelled.
     def reopen(event_key)
       @client.post("/v1/events/#{encode(event_key)}/reopen")
     end
@@ -329,6 +331,8 @@ module SeatLayer
     end
 
     # Move the event's sales to another state (setup, testable, live, paused or ended).
+    # A date its season cancelled never opens again: moving it to testable or live
+    # answers 409 season_date_cancelled.
     def transition_event_sales(event_key, to:, expected_revision:, reason: nil)
       @client.post("/v1/events/#{encode(event_key)}/sales/transition",
                    compact({ "to" => to, "expectedRevision" => expected_revision,

@@ -270,7 +270,8 @@ module SeatLayer
     # share of the date as a job, and +reason+ is kept on it. A whole-order refund
     # is the order refund. A "cancel" also voids every live ticket for the date as a
     # date_cancel_void job, +Seasons.date_cancel_void_job_id(amendment_id)+ (the answer
-    # does not name it); follow it with +retrieve_season_bulk_job+.
+    # does not name it); follow it with +retrieve_season_bulk_job+. A cancelled date
+    # can't be moved ("reschedule"), postponed or replaced: 409 performance_cancelled.
     def create_season_amendment(season_key, event_key:, kind:, starts_at: nil, name: nil,
                                 refund: nil, reason: nil, idempotency_key: nil)
       @client.post(path(season_key, "/amendments"),
@@ -433,7 +434,8 @@ module SeatLayer
       )
     end
 
-    # Mark a performance past so it stops blocking new Season sales.
+    # Mark a performance past so it stops blocking new Season sales. A cancelled date
+    # answers 409 performance_cancelled.
     def mark_season_performance_past(season_key, event_key, force: nil, idempotency_key: nil)
       @client.post(path(season_key, "/performances/#{encode(event_key)}/past"),
                    compact({ "force" => force }),

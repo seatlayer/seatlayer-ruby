@@ -57,7 +57,10 @@ module SeatLayer
     # Rename a series, change its prices, or turn sales "on" or "off" on every
     # upcoming date. +prices+ ({ "categories" => [...] }) takes only the
     # categories whose price changes (for a tiered category, only the tiers
-    # sent); every price left out keeps each date's own value.
+    # sent); every price left out keeps each date's own value. Sales "on" never
+    # opens a date its season cancelled: that date is a failed item of the job
+    # (season_date_cancelled), counted in the job's "failed" but not in
+    # "failedDates", which are the dates that could not be made.
     def update_event_series(event_key, name: nil, prices: nil, sales: nil, idempotency_key: nil)
       @client.mutation_with_header_replay(
         "PATCH", path(event_key),
