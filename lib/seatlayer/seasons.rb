@@ -488,8 +488,10 @@ module SeatLayer
 
     # Send renewal notices, to every open offer or only to +offer_ids+ (at most
     # 20,000; more is refused with 422 too_many_offer_ids).
-    def create_season_renewal_notices(season_key, offer_ids: nil)
-      @client.post(path(season_key, "/renewal-notices"), compact({ "offerIds" => offer_ids }))
+    # +batch_id+, instead of +offer_ids+: every open offer one renewal offer batch made.
+    def create_season_renewal_notices(season_key, offer_ids: nil, batch_id: nil)
+      @client.post(path(season_key, "/renewal-notices"),
+                   compact({ "offerIds" => offer_ids, "batchId" => batch_id }))
     end
 
     # Send one renewal offer again. Single-attempt: never retried automatically.

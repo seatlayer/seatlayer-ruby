@@ -356,6 +356,17 @@ RSpec.describe SeatLayer::Seasons do
     )
   end
 
+  it "sends renewal notices for one offer batch by its batch id" do
+    client, transport = build_client([{ status: 200, body: '{"scheduled":240,"withoutEmail":3}' }])
+
+    result = client.seasons.create_season_renewal_notices("sea/a", batch_id: "srb/1")
+
+    expect(result).to eq({ "scheduled" => 240, "withoutEmail" => 3 })
+    expect(transport.calls.map { |call| request_summary(call) }).to eq(
+      [["POST /v1/seasons/sea%2Fa/renewal-notices", { "batchId" => "srb/1" }, false]]
+    )
+  end
+
   it "returns the job a renewal run or a bring-across of more than 100 starts" do
     responses = [
       { status: 202, body: '{"job":{"jobId":"sbj_3","kind":"renewal_run"},"batchId":"srb_1"}' },
