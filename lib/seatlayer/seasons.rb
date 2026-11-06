@@ -22,10 +22,13 @@ module SeatLayer
                    selection(event_keys, source_performance_group_keys))
     end
 
+    # Create a draft Season. +single_tickets+ true makes each date also sell its own
+    # single tickets once the Season is on sale; the default is Season only.
     def create_season(name:, event_keys: nil, source_performance_group_keys: nil,
-                      edition: UNSET, idempotency_key: nil)
+                      edition: UNSET, idempotency_key: nil, single_tickets: nil)
       body = selection(event_keys, source_performance_group_keys).merge("name" => name)
       body.merge!(supplied({ "edition" => edition }))
+      body.merge!(compact({ "singleTickets" => single_tickets }))
       @client.post("/v1/seasons", body, idempotency_key: idempotency_key,
                                         retry_policy: :header_replay)
     end
@@ -39,13 +42,17 @@ module SeatLayer
     # The cutoffs are hours (0 to 720) before a date starts; pass +nil+ to send an
     # explicit JSON null, which means until the date starts. +audience+ "public" lists
     # the Season on your SeatLayer website ("embed_only" does not); an ended Season
-    # cannot become public (409 sales_ended).
+    # cannot become public (409 sales_ended). +single_tickets+ turned on while the Season
+    # is on sale opens each upcoming date's own sales through its readiness checks; turned
+    # off, they stop. The answer's "singleTicketDates" says which dates opened or stopped.
     def update_season( # rubocop:disable Metrics/ParameterLists
       season_key, expected_revision:, name: nil, edition: UNSET, checkout_mode: nil,
-      transfer_cutoff_hours: UNSET, return_cutoff_hours: UNSET, audience: nil, idempotency_key: nil
+      transfer_cutoff_hours: UNSET, return_cutoff_hours: UNSET, audience: nil, idempotency_key: nil,
+      single_tickets: nil
     )
       body = compact({ "expectedRevision" => expected_revision, "name" => name,
-                       "checkoutMode" => checkout_mode, "audience" => audience })
+                       "checkoutMode" => checkout_mode, "audience" => audience,
+                       "singleTickets" => single_tickets })
       body.merge!(supplied({ "edition" => edition, "transferCutoffHours" => transfer_cutoff_hours,
                              "returnCutoffHours" => return_cutoff_hours }))
       @client.mutation_with_header_replay(

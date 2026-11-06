@@ -356,6 +356,26 @@ RSpec.describe SeatLayer::Seasons do
     )
   end
 
+  it "sends single tickets on create and update, an explicit false included" do
+    updated = '{"season":{"key":"sea_1","singleTickets":true},"singleTicketDates":' \
+              '{"direction":"open","opened":["ev_1"],"closed":[],"notOpened":[],"jobId":null}}'
+    client, transport = build_client([{ status: 201, body: '{"season":{"key":"sea_1"}}' },
+                                      { status: 200, body: updated }])
+    seasons = client.seasons
+
+    seasons.create_season(name: "Series", event_keys: %w[ev_1 ev_2], single_tickets: true)
+    answer = seasons.update_season("sea/a", expected_revision: 5, single_tickets: false)
+
+    expect(answer["singleTicketDates"]["opened"]).to eq(["ev_1"])
+    expect(transport.calls.map { |call| request_summary(call) }).to eq(
+      [
+        ["POST /v1/seasons",
+         { "eventKeys" => %w[ev_1 ev_2], "name" => "Series", "singleTickets" => true }, true],
+        ["PATCH /v1/seasons/sea%2Fa", { "expectedRevision" => 5, "singleTickets" => false }, true]
+      ]
+    )
+  end
+
   it "sends renewal notices for one offer batch by its batch id" do
     client, transport = build_client([{ status: 200, body: '{"scheduled":240,"withoutEmail":3}' }])
 
