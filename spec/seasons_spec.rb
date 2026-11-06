@@ -303,6 +303,24 @@ RSpec.describe SeatLayer::Seasons do
     expect(transport.calls[4].headers["Idempotency-Key"]).to eq("night-3-storm")
   end
 
+  it "names the job voiding a cancelled date, and sizes a holder import call by its dates" do
+    expect(SeatLayer::Seasons.date_cancel_void_job_id("amd_1")).to eq("sbj_void_amd_1")
+    expect([1, 20, 21, 50].map { |dates| SeatLayer::Seasons.holder_import_rows_per_call(dates) })
+      .to eq([100, 100, 95, 43])
+
+    invalid_rows = { "error" => "invalid_rows", "code" => "invalid_rows",
+                     "message" => "At most 43 rows a call for this package.", "maxRows" => 43 }
+    client, transport = build_client([{ status: 422, body: invalid_rows.to_json }])
+
+    expect do
+      client.seasons.create_season_holder_import("sea_1", successor_plan_activation_id: "pa_1", rows: [])
+    end.to raise_error(SeatLayer::ValidationError) { |error|
+      expect(error.code).to eq("invalid_rows")
+      expect(error.body["maxRows"]).to eq(43)
+    }
+    expect(transport.calls.length).to eq(1)
+  end
+
   it "retries a bulk refund of a date with one key" do
     client, transport = build_client([{ status: 429, headers: { "Retry-After" => "0" } },
                                       { status: 202, body: '{"job":{"jobId":"sbj_1"}}' }])

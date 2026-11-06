@@ -13,6 +13,10 @@ module SeatLayer
     # of it (floor plan, prices, checkout, poster and its own seat blocks, none of
     # its orders, holds or sales). The series takes the event's name, zone and
     # floor plan.
+    #
+    # A series from an event that never started and was given up answers 409
+    # create_abandoned for that key every time: send it again with a new
+    # +idempotency_key+.
     def create_event_series( # rubocop:disable Metrics/ParameterLists
       schedule:, name: nil, chart_key: nil, timezone: nil, venue: nil,
       duration_minutes: nil, dry_run: nil, idempotency_key: nil, from_event_key: nil

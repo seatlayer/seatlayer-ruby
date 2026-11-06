@@ -10,6 +10,22 @@ module SeatLayer
   # long by design rather than doing too much.
   # rubocop:disable-next Metrics/ClassLength
   class Seasons < Resource
+    # The job voiding a cancelled date's tickets: "sbj_void_" and the cancel's
+    # "amendmentId". Cancelling a date starts it (a repeated cancel joins it);
+    # follow it with +retrieve_season_bulk_job+. Each Season ticket it voids is
+    # told by "season.ticket.voided" with reason "date_cancelled".
+    def self.date_cancel_void_job_id(amendment_id)
+      "sbj_void_#{amendment_id}"
+    end
+
+    # The most rows one +create_season_holder_import+ call takes for a package of
+    # +dates+ dates. Each row is fenced on every date: 100 up to 20 dates, then
+    # floor(2300 / (dates + 3)), 43 at 50. A call with more answers 422
+    # invalid_rows with "maxRows".
+    def self.holder_import_rows_per_call(dates)
+      (2300 / ([dates, 1].max + 3)).floor.clamp(1, 100)
+    end
+
     def list_seasons(workspace_id: nil, structure_state: nil, limit: nil, cursor: nil)
       @client.get("/v1/seasons", compact({ "workspaceId" => workspace_id,
                                            "structureState" => structure_state,
@@ -44,7 +60,10 @@ module SeatLayer
     # the Season on your SeatLayer website ("embed_only" does not); an ended Season
     # cannot become public (409 sales_ended). +single_tickets+ turned on while the Season
     # is on sale opens each upcoming date's own sales through its readiness checks; turned
-    # off, they stop. The answer's "singleTicketDates" says which dates opened or stopped.
+    # off, they stop. The answer's "singleTicketDates" says which dates opened or stopped,
+    # and carries "jobRefused" when its season_singles job could not start: the change
+    # still stands, and sending +single_tickets+ true again opens any date still not open.
+    # A retry with the same +expected_revision+ and +idempotency_key+ is not applied twice.
     def update_season( # rubocop:disable Metrics/ParameterLists
       season_key, expected_revision:, name: nil, edition: UNSET, checkout_mode: nil,
       transfer_cutoff_hours: UNSET, return_cutoff_hours: UNSET, audience: nil, idempotency_key: nil,
@@ -174,7 +193,9 @@ module SeatLayer
 
     # Import incumbent holders. Each row hash takes "rowId", "holderRef",
     # "priorPlanActivationId", "priorContractRef" and "labels", plus optional
-    # "existingBookingRef", "holderEmail" and "holderName".
+    # "existingBookingRef", "holderEmail" and "holderName". A call takes at most
+    # +Seasons.holder_import_rows_per_call(dates)+ rows (100 up to 20 dates, 43 at 50);
+    # more answers 422 invalid_rows with "maxRows" on the error's +body+.
     def create_season_holder_import(season_key, successor_plan_activation_id:, rows:,
                                     dry_run: UNSET, idempotency_key: nil)
       body = { "successorPlanActivationId" => successor_plan_activation_id, "rows" => rows }
@@ -246,7 +267,9 @@ module SeatLayer
     # "postpone" (no new time yet) or "cancel" (the date will not happen). With
     # "cancel" only, +refund+ ("none" or "per_date") refunds each SeatLayer order's
     # share of the date as a job, and +reason+ is kept on it. A whole-order refund
-    # is the order refund.
+    # is the order refund. A "cancel" also voids every live ticket for the date as a
+    # date_cancel_void job, +Seasons.date_cancel_void_job_id(amendment_id)+ (the answer
+    # does not name it); follow it with +retrieve_season_bulk_job+.
     def create_season_amendment(season_key, event_key:, kind:, starts_at: nil, name: nil,
                                 refund: nil, reason: nil, idempotency_key: nil)
       @client.post(path(season_key, "/amendments"),
