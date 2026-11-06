@@ -64,17 +64,8 @@ module SeatLayer
 
     def request(method, path, query: nil, body: nil, raw_body: nil, content_type: nil,
                 idempotency_key: nil, retry_policy: :none)
-      url = @base_url + path
-      if query
-        pairs = query.compact
-        url += "?#{URI.encode_www_form(pairs)}" unless pairs.empty?
-      end
-
-      headers = {
-        "Authorization" => "Bearer #{@secret_key}",
-        "Accept" => "application/json",
-        "User-Agent" => "seatlayer-ruby"
-      }
+      url = build_url(path, query)
+      headers = default_headers
       payload = build_payload(body, raw_body, content_type, headers)
 
       # Only operations with exact server-side response replay get an automatic
@@ -95,6 +86,13 @@ module SeatLayer
 
     def get(path, query = nil)
       request("GET", path, query: query)
+    end
+
+    # Internal path for CSV exports. Same auth, retries and error mapping as
+    # #get, but a success body comes back as the raw String, never parsed.
+    def get_text(path, query = nil)
+      headers = default_headers.merge("Accept" => "text/csv")
+      execute("GET", build_url(path, query), headers, nil, retry_allowed: true, text: true)
     end
 
     def post(path, body = nil, idempotency_key: nil, retry_policy: :none)
@@ -125,6 +123,22 @@ module SeatLayer
 
     private
 
+    def build_url(path, query)
+      url = @base_url + path
+      return url unless query
+
+      pairs = query.compact
+      pairs.empty? ? url : "#{url}?#{URI.encode_www_form(pairs)}"
+    end
+
+    def default_headers
+      {
+        "Authorization" => "Bearer #{@secret_key}",
+        "Accept" => "application/json",
+        "User-Agent" => "seatlayer-ruby"
+      }
+    end
+
     def build_payload(body, raw_body, content_type, headers)
       raise ArgumentError, "body and raw_body are mutually exclusive" if !body.nil? && !raw_body.nil?
 
@@ -140,7 +154,7 @@ module SeatLayer
 
     # The retry loop, extracted from #request so each piece stays readable: the
     # public method builds the call, this one decides how many times to make it.
-    def execute(method, url, headers, payload, retry_allowed:)
+    def execute(method, url, headers, payload, retry_allowed:, text: false)
       last_error = nil
 
       @max_retries.times do |attempt|
@@ -155,7 +169,7 @@ module SeatLayer
         end
 
         status = response[:status]
-        return parse_success(status, response[:body]) if status >= 200 && status < 300
+        return parse_success(status, response[:body], text) if status >= 200 && status < 300
 
         error_body = decode_error_body(response[:body])
         retry_after = parse_retry_after(response[:headers], error_body)
@@ -183,7 +197,8 @@ module SeatLayer
       {}
     end
 
-    def parse_success(status, body)
+    def parse_success(status, body, text)
+      return body.to_s if text
       return {} if status == 204 || body.nil? || body.empty?
 
       JSON.parse(body)

@@ -1,5 +1,89 @@
 # Changelog
 
+## Unreleased
+
+- A date its season cancelled never opens again: `transition_event_sales` to `testable` or
+  `live` and `reopen` answer `409 season_date_cancelled`, and `update_event_series` with
+  `sales: "on"` leaves it closed as a failed item of the job (`season_date_cancelled`; not in
+  `failedDates`).
+- `create_season_amendment` refuses to move (`reschedule`), postpone or replace a cancelled date,
+  and `mark_season_performance_past` refuses to mark one as taken place:
+  `409 performance_cancelled`.
+- `update_event_series` sends only the prices that change: each date keeps its own price for
+  every category (or tier) left out, so weekend and weekday prices keep their difference.
+- A season's `transferCutoffHours` / `returnCutoffHours` of `nil` means the club default
+  (Settings › Ticket site), or until the date starts when the club has none.
+- `create_holder_transfer` and `create_holder_return` are not stopped by the club's customer
+  switches in Settings › Ticket site; cut-offs still apply.
+- Cancelling a date (`create_season_amendment` with `kind: "cancel"`) voids its tickets as a
+  `date_cancel_void` job, named by `SeatLayer::Seasons.date_cancel_void_job_id(amendment_id)`
+  (`sbj_void_…`); follow it with `retrieve_season_bulk_job`. `season.ticket.voided` says
+  `date_cancelled` for each Season ticket it voids.
+- A Season package holds 2 to 50 dates. `SeatLayer::Seasons.holder_import_rows_per_call(dates)`
+  gives the most rows one `create_season_holder_import` call takes (100 up to 20 dates, 43 at
+  50); a call with more raises `ValidationError` `invalid_rows` with `"maxRows"` in its `body`.
+- `update_season`'s `singleTicketDates` may carry `jobRefused`, why a `season_singles` job could
+  not start; the change stands, and sending `single_tickets: true` again opens any date still
+  not open. An `update_season` retried with its first `idempotency_key:` and
+  `expected_revision:` is not applied twice.
+- An `event_series.create_event_series` given up for its key raises `ConflictError`
+  `create_abandoned` with a message to send it again with a new idempotency key.
+- Added the 39 remaining Fixed Renewable Season operations to `client.seasons` (87 in all):
+  performances, package edits and prices, publishing, checkout tests, occurrence returns and
+  reclaims, holders, Season order refunds and cancellations, hosted renewals, renewal quotes,
+  intents and checkouts, the sales,
+  seats and seat-count reports, and bulk refunds and lapsed-offer releases with their jobs.
+- Added three resources: `client.holders` (holders, customers, holder tickets and ticket
+  transfers), `client.orders` (account and event orders, refunds, cancellations and ticket
+  resends) and `client.event_series` (plan, read, extend and update an event series).
+- Added `holders.create_holder_return`: give back a holder's seat on one date, one per ticket.
+- Added the event sales settings to `client.events`: buyer checkout, payment gateway, sales
+  readiness, preflight and transition, booking fee, and discount codes.
+- `export_season_holders_csv`, `export_season_orders_csv` and `orders.export_event_orders_csv`
+  return the raw CSV text. `delete_season_plan` and `events.delete_event_discount_code` return
+  an empty Hash (the API answers 204).
+- 27 of the new operations use exact header replay (41 in the SDK now) and retry with one
+  `Idempotency-Key`; every other new mutation is single-attempt.
+- `Webhooks::EVENT_NAMES` adds `series.created`, `series.dates_added`, `order.paid`,
+  `order.refunded`, `order.cancelled`, `customer.created`, `customer.email_changed`,
+  `season.ticket.transfer_sent`, `season.ticket.transferred` and
+  `season.ticket.transfer_cancelled`.
+- Added `seasons.refund_season_performance` (refund every order of a cancelled date as a job,
+  with header replay), `seasons.list_season_bulk_jobs`, and `seasons.retrieve_season_bulk_job`.
+- `create_season_amendment` takes `refund:` and `reason:`, for the new `postpone` and `cancel`
+  kinds.
+- `update_season` takes `checkout_mode:`, `transfer_cutoff_hours:`, and `return_cutoff_hours:`
+  (`nil` sends an explicit null).
+- `replace_season_package_prices` documents `"priceTypeKey"` on each price, and
+  `create_season_holder_import` documents `"holderEmail"` and `"holderName"` on each row.
+- `Webhooks::EVENT_NAMES` lists all 56 public event names, adding `object.resale.*`,
+  `season.occurrence.*`, `season.performance.*` (including `postponed`, `cancelled`, and
+  `rescheduled`), `season.bulk_action.completed`, `season.order.*`, `season.ticket.issued`,
+  `season.ticket.voided`, and the Season lifecycle, hold, booking, renewal, operation and
+  amendment events.
+- `events.list` and `events.list_all` take `series_key:` to list one event series' dates.
+- Added `seasons.retrieve_season_renewal_quote`: what renewing an offer costs, and whether SeatLayer checkout can take it now.
+- Added `seasons.create_season_renewal_intent`: record a holder's intent for a renewal taken by phone or at the box office, so your own checkout can commit.
+- Added `seasons.create_season_renewal_checkout`: a SeatLayer checkout that renews an offer with no hosted page, with header replay.
+- Added `holders.create_holder_renewal_checkout`: the same checkout for one of a holder's offers, with header replay.
+- Added `holders.decline_holder_renewal_offer`: decline one of a holder's offers, with an optional `reason:`.
+- `seasons.decline_season_renewal_offer` takes an optional `reason:`, kept on the offer as `declineReason`.
+- `update_season` takes `audience:` (`"embed_only"` or `"public"`).
+- `open_season_sales` answers `warnings` (`checkout_test_missing` until a checkout test or rehearsal has passed) and can refuse with `409 plan_not_published` or `409 checkout_mode_not_chosen`.
+- A cancelled date refunds per date only: an amendment's `refund:` is `"none"` or `"per_date"`, and `refund_season_performance` takes `amount: "per_date"` (`full` answers `422 date_refund_per_date_only`; refund a whole order with the order refund).
+- `add_event_series_dates` takes `retry_failed: true` to make the failed dates again (`409 series_busy`, `422 nothing_to_retry`).
+- `list_orders` takes `holder_ref:`; orders carry `holderRef` and `customerId`, and the buyer's email can be nil (a box office sale with no email).
+- Season holds, give-backs and date cancels can refuse with `performance_cancelled`, `refund_not_started` (503), `missing_manage_capability` (403) or `invalid_refund`; a holder's status can be `reserved`; hosted renewal readiness carries `missingPrices`.
+- `create_event_series` takes `from_event_key:`: an event you already set up becomes the first date under its own key, and every other date is a copy of it. `name:` and `chart_key:` are then left out. It refuses with `404 event_not_found`, or `422 event_has_no_date`, `event_in_season`, `event_in_performance_group`, `event_in_series` or `invalid_request`.
+- Every date of an event series carries the series' plain name (`Hamlet`, not `Hamlet · 3 Nov`); tell dates apart by `startsAt`. `update_event_series` renames each date that carries the series name, and a series name cannot hold `{n}`, `{date}` or `{time}`.
+- Added `seasons.release_season_lapsed_offers`: release the seats of every lapsed renewal offer as a job (`202 {"job"}`), with header replay. An offer extended before its turn is skipped and keeps its seat. It can refuse with `503 job_busy` or `season_not_configured`; send it again.
+- `retrieve_season_hosted_renewals` and `list_season_renewal_offers` take `cursor:` and `limit:` (1 to 500 and 1 to 100) and answer one page, newest first, with `nextCursor` (nil on the last page); a bad cursor or limit is refused with `400 invalid_cursor` or `invalid_limit`.
+- `create_season_renewal_offers` answers `201 {"offers"}` for 100 contracts or fewer, and `202 {"job", "batchId"}` above that: a `renewal_run` job makes the offers. Follow it with `retrieve_season_bulk_job`, then page the offers with `list_season_renewal_offers`.
+- `create_season_holder_import_from_season` answers `202 {"job"}` when a commit brings across more than 100 holders: a `holder_import` job, whose `summary` has the same counts once it completes. It and `create_season_renewal_offers` can refuse with `409 job_mismatch` or `503 season_not_configured`, and the bring-across also with `503 job_busy`.
+- `create_season_renewal_notices` takes up to 20,000 `offer_ids:`; more is refused with `422 too_many_offer_ids`.
+- `create_season_renewal_notices` takes `batch_id:` instead of `offer_ids:`: email every open offer one `create_season_renewal_offers` batch made, such as the batch a `renewal_run` job made.
+- Single tickets on a season: `create_season` and `update_season` take `single_tickets:` (default `false`, Season only; anything else is refused with `422 invalid_single_tickets`). Every season read carries `singleTickets`, and a season on sale may carry `singleTicketsNotOpen`. `update_season`, `open_season_sales` and `resume_season_sales` answer `singleTicketDates` (`direction`, `opened`, `closed`, `notOpened`, `jobId`) when they open or stop the dates' own sales; a `season_singles` job does it for more than 12 upcoming dates.
+
 ## 0.8.0 (2026-09-10)
 
 - Added Event hosting regions: `region:` on event create, `default_region:` on workspace create and update, and `EVENT_HOSTING_REGIONS` to check a value before it is sent. Events created without a region run in Western Europe.
