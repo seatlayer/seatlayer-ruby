@@ -54,8 +54,10 @@ module SeatLayer
                    idempotency_key: idempotency_key, retry_policy: :header_replay)
     end
 
-    # Rename a series, replace its prices, or turn sales "on" or "off" on every
-    # upcoming date.
+    # Rename a series, change its prices, or turn sales "on" or "off" on every
+    # upcoming date. +prices+ ({ "categories" => [...] }) takes only the
+    # categories whose price changes (for a tiered category, only the tiers
+    # sent); every price left out keeps each date's own value.
     def update_event_series(event_key, name: nil, prices: nil, sales: nil, idempotency_key: nil)
       @client.mutation_with_header_replay(
         "PATCH", path(event_key),

@@ -56,7 +56,8 @@ module SeatLayer
     # Rename a draft, or set how the Season sells. +checkout_mode+ ("seatlayer" or
     # "server") cannot go back to undecided and is fixed once a live booking exists.
     # The cutoffs are hours (0 to 720) before a date starts; pass +nil+ to send an
-    # explicit JSON null, which means until the date starts. +audience+ "public" lists
+    # explicit JSON null, which means the club default (Settings › Ticket site), or
+    # until the date starts when the club has none. +audience+ "public" lists
     # the Season on your SeatLayer website ("embed_only" does not); an ended Season
     # cannot become public (409 sales_ended). +single_tickets+ turned on while the Season
     # is on sale opens each upcoming date's own sales through its readiness checks; turned

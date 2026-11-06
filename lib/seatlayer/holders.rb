@@ -49,7 +49,8 @@ module SeatLayer
       @client.get(path(holder_ref, "/tickets/#{encode(ticket_id)}"))
     end
 
-    # Offer tickets to another person by email.
+    # Offer tickets to another person by email. Turning customer sends off in
+    # Settings › Ticket site doesn't stop your server; cut-offs still apply.
     def create_holder_transfer(holder_ref, ticket_ids:, to_email:, idempotency_key: nil)
       @client.post(path(holder_ref, "/transfers"),
                    { "ticketIds" => ticket_ids, "toEmail" => to_email },
@@ -73,6 +74,8 @@ module SeatLayer
 
     # Give back a holder's seat on one date, one per ticket: 1 to 20 tickets,
     # all of one Season. A repeat with the same key answers with the same return.
+    # Turning give-backs off in Settings › Ticket site doesn't stop your server;
+    # cut-offs still apply.
     def create_holder_return(holder_ref, ticket_ids:, idempotency_key: nil)
       @client.post(path(holder_ref, "/returns"), { "ticketIds" => ticket_ids },
                    idempotency_key: idempotency_key, retry_policy: :header_replay)
