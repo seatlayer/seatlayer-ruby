@@ -157,11 +157,14 @@ module SeatLayer
     #
     # Live availability counts cost one round-trip per event server-side. They
     # are on by default because most callers of a single page want them; pass
-    # <tt>counts: false</tt> when paging a whole catalogue.
-    def list(workspace_id: nil, external_ref: nil, limit: nil, cursor: nil, counts: true)
+    # <tt>counts: false</tt> when paging a whole catalogue. +series_key+ lists only
+    # the dates of one event series.
+    def list(workspace_id: nil, external_ref: nil, limit: nil, cursor: nil, counts: true,
+             series_key: nil)
       query = compact({ "workspaceId" => workspace_id, "externalRef" => external_ref,
                         "limit" => limit, "cursor" => cursor })
       query["counts"] = "0" unless counts
+      query["seriesKey"] = series_key unless series_key.nil?
       @client.get("/v1/events", query)
     end
 
@@ -249,6 +252,8 @@ module SeatLayer
       @client.post("/v1/events/#{encode(event_key)}/close")
     end
 
+    # Open a paused event's sales again. A date its season cancelled never opens
+    # again: 409 season_date_cancelled.
     def reopen(event_key)
       @client.post("/v1/events/#{encode(event_key)}/reopen")
     end
@@ -288,6 +293,102 @@ module SeatLayer
     def retrieve_log(event_key, limit: nil, before: nil)
       @client.get("/v1/events/#{encode(event_key)}/log",
                   compact({ "limit" => limit, "before" => before }))
+    end
+
+    # Read who takes payment for the event, and what blocks a change.
+    def retrieve_event_buyer_checkout(event_key)
+      @client.get("/v1/events/#{encode(event_key)}/buyer-checkout")
+    end
+
+    # Choose who takes payment: "seatlayer" or "integrator". Single-attempt;
+    # +expected_revision+ stops two writers overwriting each other.
+    def replace_event_buyer_checkout(event_key, buyer_checkout:, expected_revision:)
+      @client.put("/v1/events/#{encode(event_key)}/buyer-checkout",
+                  { "buyerCheckout" => buyer_checkout, "expectedRevision" => expected_revision })
+    end
+
+    # Read the payment gateway the event uses, optionally for one +currency+.
+    def retrieve_event_payment_gateway(event_key, currency: nil)
+      @client.get("/v1/events/#{encode(event_key)}/payment-gateway",
+                  compact({ "currency" => currency }))
+    end
+
+    # Assign a payment gateway connection to the event. Pass +nil+ to send an
+    # explicit JSON null. Single-attempt: never retried automatically.
+    def replace_event_payment_gateway(event_key, connection_id: UNSET, provider: UNSET)
+      @client.put("/v1/events/#{encode(event_key)}/payment-gateway",
+                  supplied({ "connectionId" => connection_id, "provider" => provider }))
+    end
+
+    # Read what the event still needs before it can sell.
+    def retrieve_event_sales_readiness(event_key)
+      @client.get("/v1/events/#{encode(event_key)}/sales/readiness")
+    end
+
+    # Check one order against the event's sales setup. Single-attempt.
+    def preflight_event_sales(event_key, order_id:)
+      @client.post("/v1/events/#{encode(event_key)}/sales/preflight", { "orderId" => order_id })
+    end
+
+    # Move the event's sales to another state (setup, testable, live, paused or ended).
+    # A date its season cancelled never opens again: moving it to testable or live
+    # answers 409 season_date_cancelled.
+    def transition_event_sales(event_key, to:, expected_revision:, reason: nil)
+      @client.post("/v1/events/#{encode(event_key)}/sales/transition",
+                   compact({ "to" => to, "expectedRevision" => expected_revision,
+                             "reason" => reason }))
+    end
+
+    # Read the event's booking fee.
+    def retrieve_event_booking_fee(event_key)
+      @client.get("/v1/events/#{encode(event_key)}/booking-fee")
+    end
+
+    # Set the booking fee in minor units; +nil+ clears it and stays an explicit
+    # JSON null. Single-attempt: never retried automatically.
+    def replace_event_booking_fee(event_key, booking_fee_minor:)
+      @client.put("/v1/events/#{encode(event_key)}/booking-fee",
+                  { "bookingFeeMinor" => booking_fee_minor })
+    end
+
+    # List the event's discount codes.
+    def list_event_discount_codes(event_key)
+      @client.get("/v1/events/#{encode(event_key)}/discount-codes")
+    end
+
+    # Create a discount code. +kind+ is "percent" or "amount". Pass +nil+ for
+    # +starts_at+, +ends_at+ or +max_uses+ to send an explicit JSON null.
+    # Single-attempt: never retried automatically.
+    # rubocop:disable-next Metrics/ParameterLists
+    def create_event_discount_code(event_key, code:, kind:, percent: nil, amount_minor: nil,
+                                   starts_at: UNSET, ends_at: UNSET, max_uses: UNSET, active: nil)
+      body = compact({ "code" => code, "kind" => kind, "percent" => percent,
+                       "amountMinor" => amount_minor, "active" => active })
+      body.merge!(supplied({ "startsAt" => starts_at, "endsAt" => ends_at, "maxUses" => max_uses }))
+      @client.post("/v1/events/#{encode(event_key)}/discount-codes", body)
+    end
+
+    # Change a discount code. Only the fields you pass are sent; pass +nil+ for
+    # +starts_at+, +ends_at+ or +max_uses+ to send an explicit JSON null.
+    # Single-attempt: never retried automatically.
+    # rubocop:disable-next Metrics/ParameterLists
+    def update_event_discount_code(event_key, code_id, code: nil, kind: nil, percent: nil,
+                                   amount_minor: nil, starts_at: UNSET, ends_at: UNSET,
+                                   max_uses: UNSET, active: nil, state: nil)
+      body = compact({ "code" => code, "kind" => kind, "percent" => percent,
+                       "amountMinor" => amount_minor, "active" => active, "state" => state })
+      body.merge!(supplied({ "startsAt" => starts_at, "endsAt" => ends_at, "maxUses" => max_uses }))
+      @client.patch("/v1/events/#{encode(event_key)}/discount-codes/#{encode(code_id)}", body)
+    end
+
+    # End a discount code now, keeping its history.
+    def end_event_discount_code(event_key, code_id)
+      @client.post("/v1/events/#{encode(event_key)}/discount-codes/#{encode(code_id)}/end")
+    end
+
+    # Delete a discount code. The API answers 204, so this returns an empty Hash.
+    def delete_event_discount_code(event_key, code_id)
+      @client.delete("/v1/events/#{encode(event_key)}/discount-codes/#{encode(code_id)}")
     end
   end
 end

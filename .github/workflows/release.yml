@@ -71,8 +71,8 @@ jobs:
             exit 1
           fi
           count=$(wc -l < /tmp/contents.txt)
-          if [ "$count" -ne 13 ]; then
-            echo "::error::expected 13 files in the gem, found $count"
+          if [ "$count" -ne 16 ]; then
+            echo "::error::expected 16 files in the gem, found $count"
             exit 1
           fi
 

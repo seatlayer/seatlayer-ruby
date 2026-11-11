@@ -205,9 +205,25 @@ module SeatLayer
 
   # Manage webhook subscriptions. To VERIFY a delivery, see SeatLayer::Webhook.
   class Webhooks < Resource
+    # All 56 public event names, in the order the API lists them.
     EVENT_NAMES = [
-      "seat.booked", "seat.released", "seat.blocked", "hold.expired",
-      "hold.created", "hold.extended", "event.created", "event.soldout"
+      "seat.booked", "seat.released", "seat.blocked", "hold.expired", "hold.created",
+      "hold.extended", "event.created", "event.soldout", "object.resale.listed",
+      "object.resale.unlisted", "object.resale.sold", "customer.created", "customer.email_changed",
+      "order.paid", "order.refunded", "order.cancelled", "season.ticket.transfer_sent",
+      "season.ticket.transferred", "season.ticket.transfer_cancelled", "season.ticket.issued",
+      "season.ticket.voided", "season.structure.activated", "season.structure.closed",
+      "season.structure.archived", "season.plan.published", "season.plan.superseded",
+      "season.sales.opened", "season.sales.paused", "season.sales.ended", "season.hold.committed",
+      "season.hold.released", "season.hold.expired", "season.booking.confirmed",
+      "season.booking.cancelled", "season.booking.emergency_requested",
+      "season.occurrence.returned", "season.occurrence.reclaimed", "season.renewal.offered",
+      "season.renewal.intent_received", "season.renewal.renewed", "season.renewal.declined",
+      "season.renewal.lapsed", "season.renewal.released", "season.operation.partial_terminal",
+      "season.amendment.applied", "season.performance.added", "season.performance.removed",
+      "season.performance.past", "season.performance.postponed", "season.performance.cancelled",
+      "season.performance.rescheduled", "season.bulk_action.completed", "season.order.paid",
+      "season.order.refunded", "series.created", "series.dates_added"
     ].freeze
 
     def list
