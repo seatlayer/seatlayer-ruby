@@ -6,7 +6,7 @@ module SeatLayer
   # Browser selection belongs in the distinct SeasonPicker. Give it only the
   # show-once scoped token returned by +create_season_buyer_access_session+.
   #
-  # One thin method per public Season operation (87 of them), so the class is
+  # One thin method per public Season operation (90 of them), so the class is
   # long by design rather than doing too much.
   # rubocop:disable-next Metrics/ClassLength
   class Seasons < Resource
@@ -26,6 +26,15 @@ module SeatLayer
       (2300 / ([dates, 1].max + 3)).floor.clamp(1, 100)
     end
 
+    # True for the 202 a season-seats season's date cancel (+create_season_amendment+)
+    # or past date (+mark_season_performance_past+) answers while the date is still
+    # leaving every season seat: "state" "finishing", "code" "block_date_leave_pending",
+    # with "eventKey", "shardsLeft" and "shardCount". It finishes by itself: send the
+    # same request again after Retry-After to read how it ended.
+    def self.date_leave_pending?(answer)
+      answer.is_a?(Hash) && answer["state"] == "finishing" && answer["code"] == "block_date_leave_pending"
+    end
+
     def list_seasons(workspace_id: nil, structure_state: nil, limit: nil, cursor: nil)
       @client.get("/v1/seasons", compact({ "workspaceId" => workspace_id,
                                            "structureState" => structure_state,
@@ -40,11 +49,16 @@ module SeatLayer
 
     # Create a draft Season. +single_tickets+ true makes each date also sell its own
     # single tickets once the Season is on sale; the default is Season only.
+    # +inventory_mode+ "block" turns season seats on for this Season; the default is
+    # "per_hold", and anything else is refused with 422 invalid_inventory_mode. Every
+    # Season answer carries "inventoryMode": how the season's seats are decided, "block"
+    # once season seats are turned on for it (inventoryMode "block" on create or update)
+    # or it sells from its block, else "per_hold".
     def create_season(name:, event_keys: nil, source_performance_group_keys: nil,
-                      edition: UNSET, idempotency_key: nil, single_tickets: nil)
+                      edition: UNSET, idempotency_key: nil, single_tickets: nil, inventory_mode: nil)
       body = selection(event_keys, source_performance_group_keys).merge("name" => name)
       body.merge!(supplied({ "edition" => edition }))
-      body.merge!(compact({ "singleTickets" => single_tickets }))
+      body.merge!(compact({ "singleTickets" => single_tickets, "inventoryMode" => inventory_mode }))
       @client.post("/v1/seasons", body, idempotency_key: idempotency_key,
                                         retry_policy: :header_replay)
     end
@@ -65,14 +79,19 @@ module SeatLayer
     # and carries "jobRefused" when its season_singles job could not start: the change
     # still stands, and sending +single_tickets+ true again opens any date still not open.
     # A retry with the same +expected_revision+ and +idempotency_key+ is not applied twice.
+    # +inventory_mode+ "block" turns season seats on for this Season; "per_hold" turns them
+    # off again, refused with 409 season_block_exists once seats are set aside. It does not
+    # change the Season's "revision". Refused with 409 season_block_packages (more than one
+    # package), 409 season_block_on_sale (sales already opened without season seats),
+    # 409 season_not_draft_or_active, or 422 invalid_inventory_mode.
     def update_season( # rubocop:disable Metrics/ParameterLists
       season_key, expected_revision:, name: nil, edition: UNSET, checkout_mode: nil,
       transfer_cutoff_hours: UNSET, return_cutoff_hours: UNSET, audience: nil, idempotency_key: nil,
-      single_tickets: nil
+      single_tickets: nil, inventory_mode: nil
     )
       body = compact({ "expectedRevision" => expected_revision, "name" => name,
                        "checkoutMode" => checkout_mode, "audience" => audience,
-                       "singleTickets" => single_tickets })
+                       "singleTickets" => single_tickets, "inventoryMode" => inventory_mode })
       body.merge!(supplied({ "edition" => edition, "transferCutoffHours" => transfer_cutoff_hours,
                              "returnCutoffHours" => return_cutoff_hours }))
       @client.mutation_with_header_replay(
@@ -126,7 +145,8 @@ module SeatLayer
     # Open sales. The answer's "warnings" say what is advised but not required, such
     # as "checkout_test_missing" until a checkout test or rehearsal has passed.
     # Refused with 409 plan_not_published or checkout_mode_not_chosen until a package
-    # is published and a checkout mode is chosen.
+    # is published and a checkout mode is chosen, and with 409 block_not_ready when
+    # season seats are turned on (inventory_mode "block") but the seats are not set aside yet.
     def open_season_sales(season_key, expected_revision:)
       sales(season_key, "open", expected_revision)
     end
@@ -272,6 +292,9 @@ module SeatLayer
     # date_cancel_void job, +Seasons.date_cancel_void_job_id(amendment_id)+ (the answer
     # does not name it); follow it with +retrieve_season_bulk_job+. A cancelled date
     # can't be moved ("reschedule"), postponed or replaced: 409 performance_cancelled.
+    # On a season-seats season, a "cancel" first takes the date off every season seat:
+    # while that finishes the answer is a 202 (check with +Seasons.date_leave_pending?+);
+    # send the same request again to read the amendment.
     def create_season_amendment(season_key, event_key:, kind:, starts_at: nil, name: nil,
                                 refund: nil, reason: nil, idempotency_key: nil)
       @client.post(path(season_key, "/amendments"),
@@ -435,7 +458,9 @@ module SeatLayer
     end
 
     # Mark a performance past so it stops blocking new Season sales. A cancelled date
-    # answers 409 performance_cancelled.
+    # answers 409 performance_cancelled. On a season-seats season the date first leaves
+    # every season seat: while that finishes the answer is a 202 (check with
+    # +Seasons.date_leave_pending?+).
     def mark_season_performance_past(season_key, event_key, force: nil, idempotency_key: nil)
       @client.post(path(season_key, "/performances/#{encode(event_key)}/past"),
                    compact({ "force" => force }),
@@ -608,6 +633,41 @@ module SeatLayer
     # Read one bulk job with its counts and up to 500 failed items.
     def retrieve_season_bulk_job(season_key, job_id)
       @client.get(path(season_key, "/jobs/#{encode(job_id)}"))
+    end
+
+    # Set the Season's seats aside on every date: every seat its packages price, minus
+    # +keep_for_single_tickets+ ({ "sectionIds", "categoryKeys", "labels" }). Answers 202
+    # with "job" (a season_block_set_aside job to follow with +retrieve_season_bulk_job+)
+    # and "block". On an active Season block mode turns on by itself once every date has
+    # the seats (season.block.ready); on a draft, Publish turns it on. Season seats must be
+    # on for the Season (409 season_block_not_enabled otherwise). Retried with one
+    # Idempotency-Key, which replays the same answer.
+    def set_aside_season_block(season_key, expected_revision:, keep_for_single_tickets: nil,
+                               idempotency_key: nil)
+      @client.post(path(season_key, "/block"),
+                   compact({ "expectedRevision" => expected_revision,
+                             "keepForSingleTickets" => keep_for_single_tickets }),
+                   idempotency_key: idempotency_key, retry_policy: :header_replay)
+    end
+
+    # The Season's seats set aside on every date: "block" with its "mode" ("block" once
+    # on, else "per_hold"), "state", "counts" and each date's "state".
+    def retrieve_season_block(season_key)
+      @client.get(path(season_key, "/block"))
+    end
+
+    # Release season seats to single sale: every unsold seat (+scope+ { "all" => true }),
+    # or the sections, categories or seats named. +event_keys+ limits it to those dates
+    # (left out: every date still to come); +at+ (an ISO time) releases then instead of
+    # now. Answers 202 with "job" (a season_block_release job to follow with
+    # +retrieve_season_bulk_job+) and "block". season.block.released is sent once it has
+    # run on every date. Retried with one Idempotency-Key, which replays the same release.
+    def release_season_block(season_key, expected_revision:, scope:, event_keys: nil, at: nil,
+                             reason: nil, idempotency_key: nil)
+      @client.post(path(season_key, "/block/release"),
+                   compact({ "expectedRevision" => expected_revision, "scope" => scope,
+                             "eventKeys" => event_keys, "at" => at, "reason" => reason }),
+                   idempotency_key: idempotency_key, retry_policy: :header_replay)
     end
 
     private

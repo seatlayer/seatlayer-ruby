@@ -145,6 +145,52 @@ end
 client.holders.decline_holder_renewal_offer("holder_123", offer_id, reason: "Moving away")
 ```
 
+### Season seats
+
+Season seats are the seats a season sets aside on every date before its sales open. A season
+buyer's hold then doesn't have to ask each date, and single-ticket buyers see those seats as
+unavailable. They are off for every season until you pass `inventory_mode: "block"` to
+`create_season` or `update_season`. The season needs one package, and its sales must not have
+opened.
+
+```ruby
+client.seasons.update_season(season_key, expected_revision: revision, inventory_mode: "block")
+
+job = client.seasons.set_aside_season_block(
+  season_key,
+  expected_revision: revision,
+  keep_for_single_tickets: { "sectionIds" => ["sec_family"] }
+).fetch("job")
+while %w[planning running].include?(job["state"])
+  sleep 2
+  job = client.seasons.retrieve_season_bulk_job(season_key, job["jobId"]).fetch("job")
+end
+block = client.seasons.retrieve_season_block(season_key).fetch("block")
+
+# Release unsold season seats to single sale. Leave out at: to release now.
+client.seasons.release_season_block(
+  season_key,
+  expected_revision: block["revision"],
+  scope: { "all" => true },
+  at: "2026-12-01T09:00:00Z"
+)
+```
+
+- On an active season, block mode turns on by itself once every date has the seats, and
+  `season.block.ready` is sent once. On a draft, `publish_season` turns it on.
+  `season.block.released` is sent once a release has run.
+- In block mode, a date cancel (`create_season_amendment`, kind `"cancel"`) or
+  `mark_season_performance_past` first takes the date off every season seat. Until that finishes
+  the answer is a `202`: check it with `SeatLayer::Seasons.date_leave_pending?(answer)`, then send
+  the same request again after `Retry-After`.
+- Refusals come through `SeatLayer::APIError` with `code`, and nothing changes. For example
+  `409 season_block_packages` (more than one package), `409 season_block_on_sale` (sales have
+  opened), or `409 block_not_ready` from `open_season_sales` before block mode is on.
+- A partner's seat on a date (one a sales channel sells there) stays out of the block. It is
+  listed in `block["notFreeOnEveryDate"]` with reason `channel`.
+
+The [Season seats docs](https://docs.seatlayer.io/server-api/seasons/#season-seats) list every refusal.
+
 ## Orders, holders, event sales and event series
 
 `client.orders` reads, exports, refunds and cancels the orders SeatLayer took through its own

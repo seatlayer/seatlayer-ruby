@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe SeatLayer::Seasons do
-  it "maps all 87 Season operations and their exact replay classes" do
-    client, transport = build_client(Array.new(87) { { status: 200 } })
+  it "maps all 90 Season operations and their exact replay classes" do
+    client, transport = build_client(Array.new(90) { { status: 200 } })
     seasons = client.seasons
     key = "sea/a"
 
@@ -123,6 +123,13 @@ RSpec.describe SeatLayer::Seasons do
                       buyer_name: "Ana Silva", provider: "stripe", idempotency_key: "renew-1"
     )
     seasons.release_season_lapsed_offers(key, idempotency_key: "release-lapsed-1")
+    # Season seats: set aside, read, release (phase 4).
+    seasons.set_aside_season_block(key, expected_revision: 7,
+                                        keep_for_single_tickets: { "labels" => ["A-6"] },
+                                        idempotency_key: "block-1")
+    seasons.retrieve_season_block(key)
+    seasons.release_season_block(key, expected_revision: 7, scope: { "all" => true },
+                                      event_keys: ["ev/3"], at: "2026-12-01T10:00:00Z", reason: "Unsold")
 
     expected = [
       "GET /v1/seasons?workspaceId=ws+1&structureState=draft&limit=20&cursor=c%2F1",
@@ -182,7 +189,9 @@ RSpec.describe SeatLayer::Seasons do
       "GET /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/quote",
       "POST /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/intent",
       "POST /v1/seasons/sea%2Fa/renewal-offers/offer%2F1/checkout",
-      "POST /v1/seasons/sea%2Fa/renewal-offers/release-lapsed"
+      "POST /v1/seasons/sea%2Fa/renewal-offers/release-lapsed",
+      "POST /v1/seasons/sea%2Fa/block", "GET /v1/seasons/sea%2Fa/block",
+      "POST /v1/seasons/sea%2Fa/block/release"
     ]
     actual = transport.calls.map do |call|
       "#{call.http_method} #{call.url.delete_prefix("https://api.seatlayer.io")}"
@@ -213,12 +222,16 @@ RSpec.describe SeatLayer::Seasons do
         nil, nil,
         { "returnUrl" => "https://tickets.example/renewed", "buyerEmail" => "ana@example.com",
           "buyerName" => "Ana Silva", "provider" => "stripe" },
-        nil
+        nil,
+        { "expectedRevision" => 7, "keepForSingleTickets" => { "labels" => ["A-6"] } },
+        nil,
+        { "expectedRevision" => 7, "scope" => { "all" => true }, "eventKeys" => ["ev/3"],
+          "at" => "2026-12-01T10:00:00Z", "reason" => "Unsold" }
       ]
     )
 
     replay_indexes = [2, 4, 5, 10, 18, 27, 29, 38, 48, 50, 51, 52, 53, 54, 55, 56, 58, 60, 61, 62,
-                      66, 67, 68, 80, 85, 86]
+                      66, 67, 68, 80, 85, 86, 87, 89]
     transport.calls.each_with_index do |call, index|
       if replay_indexes.include?(index)
         expect(call.headers).to have_key("Idempotency-Key")
@@ -229,6 +242,46 @@ RSpec.describe SeatLayer::Seasons do
     expect(transport.calls[80].headers["Idempotency-Key"]).to eq("refund-date-1")
     expect(transport.calls[85].headers["Idempotency-Key"]).to eq("renew-1")
     expect(transport.calls[86].headers["Idempotency-Key"]).to eq("release-lapsed-1")
+    expect(transport.calls[87].headers["Idempotency-Key"]).to eq("block-1")
+  end
+
+  it "hands the season seats answers back: the 202s, a job of a new kind, and the 409 codes" do
+    job = { "jobId" => "sbsa_sbp_1", "kind" => "season_block_set_aside", "state" => "running",
+            "counts" => { "total" => 3, "done" => 1, "skipped" => 0, "failed" => 0 } }
+    block = { "mode" => "per_hold", "state" => "setting_aside", "revision" => 7 }
+    pending = { "state" => "finishing", "code" => "block_date_leave_pending", "retryable" => true,
+                "eventKey" => "ev_1", "shardsLeft" => [1], "shardCount" => 2, "message" => "Still leaving" }
+    codes = %w[season_block_not_enabled block_exists season_block_set_aside season_inventory_locked
+               date_leave_in_progress]
+    responses = [
+      { status: 202, body: JSON.generate({ "job" => job, "block" => block }) },
+      { status: 200, body: JSON.generate({ "job" => job.merge("kind" => "season_block_release") }) },
+      { status: 202, body: JSON.generate(pending), headers: { "Retry-After" => "2" } },
+      { status: 202, body: JSON.generate(pending) }
+    ] + codes.map { |code| { status: 409, body: JSON.generate({ "error" => code, "code" => code }) } }
+    client, transport = build_client(responses)
+    seasons = client.seasons
+
+    set_aside = seasons.set_aside_season_block("sea_1", expected_revision: 7)
+    expect(set_aside).to eq({ "job" => job, "block" => block })
+    # Without a caller key one is generated, so a retry replays the same answer.
+    expect(transport.calls[0].headers).to have_key("Idempotency-Key")
+    expect(seasons.retrieve_season_bulk_job("sea_1", "sbr_1")["job"]["kind"]).to eq("season_block_release")
+    cancel = seasons.create_season_amendment("sea_1", event_key: "ev_1", kind: "cancel")
+    past = seasons.mark_season_performance_past("sea_1", "ev_1")
+    expect(described_class.date_leave_pending?(cancel)).to be(true)
+    expect(described_class.date_leave_pending?(past)).to be(true)
+    expect(described_class.date_leave_pending?({ "amendment" => { "amendmentId" => "am_1" } })).to be(false)
+    other = { "state" => "finishing", "code" => "season_busy" }
+    expect(described_class.date_leave_pending?(other)).to be(false)
+    done = { "state" => "done", "code" => "block_date_leave_pending" }
+    expect(described_class.date_leave_pending?(done)).to be(false)
+    expect(described_class.date_leave_pending?(nil)).to be(false)
+    codes.each do |code|
+      scope = { "labels" => ["A-1"] }
+      release = -> { seasons.release_season_block("sea_1", expected_revision: 7, scope: scope) }
+      expect(release).to raise_error(SeatLayer::ConflictError) { |error| expect(error.code).to eq(code) }
+    end
   end
 
   it "sends the decline reason, and retries a renewal checkout with one key but not the intent" do
@@ -392,6 +445,64 @@ RSpec.describe SeatLayer::Seasons do
         ["PATCH /v1/seasons/sea%2Fa", { "expectedRevision" => 5, "singleTickets" => false }, true]
       ]
     )
+  end
+
+  it "sends inventory_mode on create and update only when given, and reads it back on every season" do
+    block = '{"season":{"key":"sea_1","revision":5,"inventoryMode":"block"}}'
+    per_hold = '{"season":{"key":"sea_2","revision":1,"inventoryMode":"per_hold"}}'
+    list = '{"seasons":[{"key":"sea_1","inventoryMode":"block"},' \
+           '{"key":"sea_2","inventoryMode":"per_hold"}],"nextCursor":null}'
+    client, transport = build_client(
+      [block, per_hold, block, per_hold, per_hold, block, list].map { |body| { status: 200, body: body } }
+    )
+    seasons = client.seasons
+
+    created = seasons.create_season(name: "Series", event_keys: %w[ev_1 ev_2], inventory_mode: "block")
+    seasons.create_season(name: "Series", event_keys: %w[ev_1 ev_2])
+    turned_on = seasons.update_season("sea_1", expected_revision: 5, inventory_mode: "block")
+    seasons.update_season("sea_1", expected_revision: 5, inventory_mode: "per_hold")
+    seasons.update_season("sea_1", expected_revision: 5, name: "Series 2")
+    retrieved = seasons.retrieve_season("sea_1")
+    listed = seasons.list_seasons
+
+    expect(transport.calls.map { |call| request_summary(call) }).to eq(
+      [
+        ["POST /v1/seasons",
+         { "eventKeys" => %w[ev_1 ev_2], "name" => "Series", "inventoryMode" => "block" }, true],
+        ["POST /v1/seasons", { "eventKeys" => %w[ev_1 ev_2], "name" => "Series" }, true],
+        ["PATCH /v1/seasons/sea_1", { "expectedRevision" => 5, "inventoryMode" => "block" }, true],
+        ["PATCH /v1/seasons/sea_1", { "expectedRevision" => 5, "inventoryMode" => "per_hold" }, true],
+        ["PATCH /v1/seasons/sea_1", { "expectedRevision" => 5, "name" => "Series 2" }, true],
+        ["GET /v1/seasons/sea_1", nil, false],
+        ["GET /v1/seasons", nil, false]
+      ]
+    )
+    expect(created["season"]["inventoryMode"]).to eq("block")
+    expect(turned_on["season"]["inventoryMode"]).to eq("block")
+    expect(retrieved["season"]["inventoryMode"]).to eq("block")
+    expect(listed["seasons"].map { |season| season["inventoryMode"] }).to eq(%w[block per_hold])
+  end
+
+  it "hands the inventory_mode refusals and block_not_ready back with their code" do
+    refusals = [[409, "season_block_packages"], [409, "season_block_on_sale"],
+                [409, "season_not_draft_or_active"], [409, "season_block_exists"],
+                [422, "invalid_inventory_mode"]]
+    responses = refusals.map do |status, code|
+      { status: status, body: JSON.generate({ "error" => code, "code" => code, "message" => code }) }
+    end
+    not_ready = { "error" => "block_not_ready", "code" => "block_not_ready" }
+    responses << { status: 409, body: JSON.generate(not_ready) }
+    client, = build_client(responses)
+    seasons = client.seasons
+
+    refusals.each do |status, code|
+      update = -> { seasons.update_season("sea_1", expected_revision: 5, inventory_mode: "block") }
+      expect(update).to raise_error(SeatLayer::APIError) { |error|
+        expect([error.status, error.code]).to eq([status, code])
+      }
+    end
+    open_sales = -> { seasons.open_season_sales("sea_1", expected_revision: 5) }
+    expect(open_sales).to raise_error(SeatLayer::ConflictError) { |error| expect(error.code).to eq("block_not_ready") }
   end
 
   it "sends renewal notices for one offer batch by its batch id" do

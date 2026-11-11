@@ -791,7 +791,7 @@ RSpec.describe SeatLayer::Client do
 
       client.webhooks.create(url: "https://hooks.example", events: added)
 
-      expect(SeatLayer::Webhooks::EVENT_NAMES.length).to eq(56)
+      expect(SeatLayer::Webhooks::EVENT_NAMES.length).to eq(58)
       expect(JSON.parse(transport.calls[0].body).fetch("events")).to eq(added)
     end
 
@@ -814,15 +814,15 @@ RSpec.describe SeatLayer::Client do
         season.renewal.released season.operation.partial_terminal season.amendment.applied
         season.performance.added season.performance.removed season.performance.past
         season.performance.postponed season.performance.cancelled season.performance.rescheduled
-        season.bulk_action.completed season.order.paid season.order.refunded
-        series.created series.dates_added
+        season.bulk_action.completed season.block.ready season.block.released
+        season.order.paid season.order.refunded series.created series.dates_added
       ]
       client, transport = build_client([{ status: 201 }])
 
       client.webhooks.create(url: "https://hooks.example", events: public_names)
 
       expect(SeatLayer::Webhooks::EVENT_NAMES).to eq(public_names)
-      expect(JSON.parse(transport.calls[0].body).fetch("events").length).to eq(56)
+      expect(JSON.parse(transport.calls[0].body).fetch("events").length).to eq(58)
     end
 
     it "rejects unknown webhook events before transport" do
