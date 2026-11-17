@@ -21,13 +21,13 @@ through one typed ticketing API client.
 > **Server-side only.** This gem authenticates with your secret key. Never load it anywhere a
 > ticket buyer can reach. Browser surfaces get short-lived, origin-bound tokens that you mint here.
 
-Two-step shape: the buyer picks and holds seats in the client with your public key, then this SDK confirms the booking from your server with your secret key while your platform keeps checkout and its own payment provider.
+**How it works:** the buyer picks and holds seats in your website or app with your public key. Your server then reads the hold, takes the payment through your own provider, and books the seats with this SDK and your secret key.
 
-**Start here:** [Quickstart](https://docs.seatlayer.io/start/quickstart/) · [Holds and checkout](https://docs.seatlayer.io/buyer-sdk/holds-and-checkout/) · [Ruby server SDK guide](https://docs.seatlayer.io/server-sdk/ruby/) · [SDK catalog](https://docs.seatlayer.io/sdk-catalog.json) · [Pricing](https://seatlayer.io/pricing/): $0 entry, 100 free confirmed-sold-seat credits per organization each month, then $0.10 down to $0.05 a credit, and credits never expire.
+**Start here:** [Quickstart](https://docs.seatlayer.io/start/quickstart/) · [Holds and checkout](https://docs.seatlayer.io/buyer-sdk/holds-and-checkout/) · [Ruby server SDK guide](https://docs.seatlayer.io/server-sdk/ruby/) · [SDK catalog](https://docs.seatlayer.io/sdk-catalog.json) · [Pricing](https://seatlayer.io/pricing/): 100 sold seats free every month, then 10¢ down to 5¢ per sold seat. No subscription, and purchased credits never expire. Test mode is free.
 
 ## Scale evidence
 
-Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Fixtures, method and run logs: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k. This is renderer evidence, not a concurrent-buyer claim.
+Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Tested at 10,000 simulated concurrent buyers on one 12,000-seat event (18 September 2026): engine-side hold latency p99 9 ms, zero server errors. Method, fixtures and run files: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k.
 
 ## Install the Ruby seat booking SDK
 
@@ -86,14 +86,16 @@ Nullable event-create fields distinguish omission from an explicit reset: passin
 
 ## Fixed Renewable Seasons
 
-`client.seasons` exposes all 87 trusted organizer operations: catalogue and
-package lifecycle, performances, prices (each price hash may name a
-`"priceTypeKey"`: `adult`, `child`, `concession`, `senior` or `student`),
-checkout tests, sales windows, buyer access and booking, holder imports,
-renewals with their quotes, intents and checkouts, occurrences, Season orders, reports and CSV exports, and the bulk
-refund of a cancelled date (`refund_season_performance`) and the release of
-lapsed renewal offers (`release_season_lapsed_offers`) with their jobs
-(`list_season_bulk_jobs`, `retrieve_season_bulk_job`).
+`client.seasons` has all 90 season operations: seasons and their packages, dates
+and package prices (per price type, set with `"priceTypeKey"`: `adult`, `child`,
+`concession`, `senior` or `student`), sales windows, checkout tests, buyer
+sessions and booking, holder imports and the holder list, season orders, renewals
+(offers, quotes, intents, checkouts and hosted renewal links), date changes and
+cancellations, season seats, bulk refunds with their jobs, sales and seat reports,
+CSV exports, audit and support export. The bulk refund of a cancelled date is
+`refund_season_performance`, the release of lapsed renewal offers is
+`release_season_lapsed_offers`, and their jobs are read with
+`list_season_bulk_jobs` and `retrieve_season_bulk_job`.
 
 Above 100 contracts, `create_season_renewal_offers` answers `202` with
 `{"job", "batchId"}` instead of the offers: follow the `renewal_run` job with
@@ -102,12 +104,12 @@ Above 100 contracts, `create_season_renewal_offers` answers `202` with
 holders (`create_season_holder_import_from_season`) answers `202` with a
 `holder_import` job the same way.
 
-After the test hold/book/cancel journey and matching webhook deliveries,
-`validate_season_buyer_rehearsal(season_key)` sends no evidence body; SeatLayer
-discovers the retained chain automatically. Retrieved Season holds contain
-inventory identity, not an authoritative amount. When you sell a Season through
-your own checkout, your platform owns package price, payment, order, tax, refunds,
-benefits, and ticket or pass delivery.
+Before you open sales, run one test hold, booking and cancellation with their
+webhooks, then call `validate_season_buyer_rehearsal(season_key)`. It finds those
+test records itself, so it takes no body. With your own checkout, until a test like this or a checkout test has passed, opening sales answers with a `checkout_test_missing` warning. A
+season hold lists each date's seat, category and quantity but no price: when you
+run your own checkout, you set the package price and take the payment, and you
+issue the tickets.
 
 ```ruby
 checked = client.seasons.validate_season(
@@ -120,10 +122,11 @@ draft = client.seasons.create_season(
 ).fetch("season")
 ```
 
-Treat `202` as accepted work and poll `retrieve_season_lifecycle` with the
-returned operation identity. Buyer-session minting and domain-exact booking,
-cancellation, and renewal actions remain single-attempt; only declared
-header-replay catalogue mutations retry automatically.
+A `202` answer means the work was accepted and is still running: keep the returned
+operation id and poll `retrieve_season_lifecycle` until it finishes. Bookings,
+cancellations and renewal commits are sent once and never retried by the SDK, so
+give each one your own stable id; sending the same id again is safe. A buyer session is sent once too, and repeating it is not safe: if its answer is lost, revoke
+what was created and create one new session.
 
 When SeatLayer takes the Season's payments, renew a holder with no hosted page:
 read the price, start a checkout, and send the holder to `payment.url`. For a
@@ -341,16 +344,16 @@ The full set, all opt-in:
 |---|---|
 | `event:view` | Read the seat map and its live states |
 | `event:block` | Block and unblock seats |
-| `event:cancel` | Cancel a Platform/SDK booking by reference and return its inventory to sale; does not move gateway money |
+| `event:cancel` | Cancel a booking by its reference and put the seats back on sale; refunds nobody |
 | `event:reports` | Read sales and availability reports |
 | `event:channels:view` | Read sales channels and their allocations |
 | `event:channels:manage` | Create, pause and archive channels; rotate access links |
-| `event:orders:read` | Read SeatLayer-managed orders |
-| `event:refund` | Refund an eligible Managed Ticketing order through its connected gateway |
-| `event:tickets:send` | Send SeatLayer-managed tickets |
+| `event:orders:read` | Read the orders SeatLayer's checkout took |
+| `event:refund` | Refund an order SeatLayer's checkout took, through its payment gateway |
+| `event:tickets:send` | Send the tickets of an order SeatLayer's checkout took |
 | `event:door:view` | Read the door list |
 | `event:door:checkin` | Check tickets in and out |
-| `event:boxoffice` | Use the managed box-office surface |
+| `event:boxoffice` | Use SeatLayer's box office screen |
 
 The two `event:channels:*` capabilities are **not** in the default (a token minted before sales
 channels existed must not silently acquire channel authority), so ask for them explicitly if the
@@ -363,8 +366,8 @@ feature policy under `result["session"]`. Pass `safe_mode_options` only with `mo
 
 Subscription responses use the wire envelopes exactly: `list` returns `{"subs" => [...]}`,
 `create` returns `{"sub" => ..., "secret" => ...}` (the secret is shown once), and `update`
-returns `{"sub" => ...}`. `SeatLayer::Webhooks::EVENT_NAMES` is the exact 56-name public event set;
-delivery history accepts `limit`, `status` (`"ok"` or `"failed"`), and `before`.
+returns `{"sub" => ...}`. `SeatLayer::Webhooks::EVENT_NAMES` lists every event name this version
+accepts; delivery history accepts `limit`, `status` (`"ok"` or `"failed"`), and `before`.
 
 Verify every delivery against the **raw** body. Re-encoding a parsed Hash changes the bytes and
 verification will fail.
@@ -491,7 +494,7 @@ outbox, and support operations.
 | `webhooks` | `list` `create` `update` `delete` `list_deliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 | `performance_groups` | `list` `create` `retrieve` `delete` `activate` `close` `retrieve_lifecycle` `create_buyer_access_session` `list_buyer_access_sessions` `revoke_buyer_access_session` `retrieve_hold` `book_hold` `retrieve_booking` |
-| `seasons` | 87 operations for catalogue and Plan lifecycle, performances, package prices, checkout tests, sales windows, buyer access and booking, holder imports, holders, renewals, renewal quotes and checkouts, occurrence amendments, returns and reclaims, Season orders, bulk refunds, lapsed-offer releases and jobs, reports and CSV exports, audit, outbox, and support export |
+| `seasons` | 90 operations for catalogue and Plan lifecycle, performances, package prices, checkout tests, sales windows, buyer access and booking, holder imports, holders, renewals, renewal quotes and checkouts, occurrence amendments, returns and reclaims, Season orders, bulk refunds, lapsed-offer releases and jobs, reports and CSV exports, audit, outbox, and support export |
 | `holders` | `list_customers` `retrieve_holder` `update_holder` `revoke_holder_sessions` `list_holder_seasons` `list_holder_tickets` `retrieve_holder_ticket` `create_holder_transfer` `list_holder_transfers` `cancel_holder_transfer` `accept_holder_transfer` `create_holder_return` `create_holder_renewal_checkout` `decline_holder_renewal_offer` |
 | `orders` | `list_orders` `retrieve_order` `list_order_tickets` `list_event_orders` `retrieve_event_order` `export_event_orders_csv` `refund_event_order` `cancel_event_order` `resend_event_order_tickets` |
 | `event_series` | `create_event_series` `list_event_series` `retrieve_event_series` `add_event_series_dates` `update_event_series` |
@@ -502,14 +505,14 @@ Full reference: [SeatLayer Ruby server SDK guide](https://docs.seatlayer.io/serv
 
 Some API surface is intentionally unwrapped, not merely pending:
 
-- **Connecting a payment gateway.** Connecting one is a dashboard flow. Once it is connected,
-  `events.replace_event_payment_gateway` assigns it to an event.
-- **Realtime seat updates.** Live seat state reaches the *browser* through the widget's own socket.
-  There is no server-side subscribe; a secret-key caller gets authoritative state from
-  `events.retrieve_report` and `inventory.retrieve_availability`.
+- **Payment gateways.** A gateway is set up in the SeatLayer dashboard, not through this SDK. Once
+  it is set up, `events.replace_event_payment_gateway` assigns it to an event.
+- **Realtime seat updates.** Live seat changes reach buyers through the seat map itself. There is
+  no server-side live feed; a server reads the current state with `events.retrieve_report` and
+  `inventory.retrieve_availability`.
 
-Neither is reachable through `request` as a supported path either; both are excluded from the
-public manifest, not just from the wrapper.
+Neither of these two (setting up a gateway, a server-side live feed) is part of the public API, so
+`request` does not support them either.
 
 ## Frequently asked questions
 
@@ -544,12 +547,11 @@ outcome before trying again.
 
 ### Can I use my own payment provider?
 
-Yes. This server SDK does not process payment in a Platform/SDK integration. Inspect the hold,
-compute the charge from each returned item's authoritative `unitPrice`, `quantity`, and `currency`,
-take the money through whichever provider you already use, and then book the hold with your order
-id as `booking_ref`. SeatLayer owns seating state, holds, booking concurrency, and the inventory
-ledger in this integration; your platform owns payments, commercial orders, tickets, delivery,
-and refunds. Managed Ticketing is a separate product path with organizer-connected payments.
+Yes. Nothing in this SDK takes a payment: your server charges the hold's total through the provider
+you already use, then books the seats with your order id as `booking_ref`, and SeatLayer never
+touches the money. If you would rather SeatLayer run the checkout for an event
+(`events.replace_event_buyer_checkout`), buyers pay through one of 14 payment gateways, including
+Stripe, PayPal and Square, straight into your own account.
 
 ## Continue your Ruby integration
 
