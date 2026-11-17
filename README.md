@@ -86,14 +86,16 @@ Nullable event-create fields distinguish omission from an explicit reset: passin
 
 ## Fixed Renewable Seasons
 
-`client.seasons` exposes all 87 trusted organizer operations: catalogue and
-package lifecycle, performances, prices (each price hash may name a
-`"priceTypeKey"`: `adult`, `child`, `concession`, `senior` or `student`),
-checkout tests, sales windows, buyer access and booking, holder imports,
-renewals with their quotes, intents and checkouts, occurrences, Season orders, reports and CSV exports, and the bulk
-refund of a cancelled date (`refund_season_performance`) and the release of
-lapsed renewal offers (`release_season_lapsed_offers`) with their jobs
-(`list_season_bulk_jobs`, `retrieve_season_bulk_job`).
+`client.seasons` has all 90 season operations: seasons and their packages, dates
+and package prices (per price type, set with `"priceTypeKey"`: `adult`, `child`,
+`concession`, `senior` or `student`), sales windows, checkout tests, buyer
+sessions and booking, holder imports and the holder list, season orders, renewals
+(offers, quotes, intents, checkouts and hosted renewal links), date changes and
+cancellations, season seats, bulk refunds with their jobs, sales and seat reports,
+CSV exports, audit and support export. The bulk refund of a cancelled date is
+`refund_season_performance`, the release of lapsed renewal offers is
+`release_season_lapsed_offers`, and their jobs are read with
+`list_season_bulk_jobs` and `retrieve_season_bulk_job`.
 
 Above 100 contracts, `create_season_renewal_offers` answers `202` with
 `{"job", "batchId"}` instead of the offers: follow the `renewal_run` job with
@@ -491,7 +493,7 @@ outbox, and support operations.
 | `webhooks` | `list` `create` `update` `delete` `list_deliveries` |
 | `workspaces` | `list` `create` `retrieve` `update` |
 | `performance_groups` | `list` `create` `retrieve` `delete` `activate` `close` `retrieve_lifecycle` `create_buyer_access_session` `list_buyer_access_sessions` `revoke_buyer_access_session` `retrieve_hold` `book_hold` `retrieve_booking` |
-| `seasons` | 87 operations for catalogue and Plan lifecycle, performances, package prices, checkout tests, sales windows, buyer access and booking, holder imports, holders, renewals, renewal quotes and checkouts, occurrence amendments, returns and reclaims, Season orders, bulk refunds, lapsed-offer releases and jobs, reports and CSV exports, audit, outbox, and support export |
+| `seasons` | 90 operations for catalogue and Plan lifecycle, performances, package prices, checkout tests, sales windows, buyer access and booking, holder imports, holders, renewals, renewal quotes and checkouts, occurrence amendments, returns and reclaims, Season orders, bulk refunds, lapsed-offer releases and jobs, reports and CSV exports, audit, outbox, and support export |
 | `holders` | `list_customers` `retrieve_holder` `update_holder` `revoke_holder_sessions` `list_holder_seasons` `list_holder_tickets` `retrieve_holder_ticket` `create_holder_transfer` `list_holder_transfers` `cancel_holder_transfer` `accept_holder_transfer` `create_holder_return` `create_holder_renewal_checkout` `decline_holder_renewal_offer` |
 | `orders` | `list_orders` `retrieve_order` `list_order_tickets` `list_event_orders` `retrieve_event_order` `export_event_orders_csv` `refund_event_order` `cancel_event_order` `resend_event_order_tickets` |
 | `event_series` | `create_event_series` `list_event_series` `retrieve_event_series` `add_event_series_dates` `update_event_series` |
