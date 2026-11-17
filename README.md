@@ -507,13 +507,13 @@ Full reference: [SeatLayer Ruby server SDK guide](https://docs.seatlayer.io/serv
 
 Some API surface is intentionally unwrapped, not merely pending:
 
-- **Connecting a payment gateway.** Connecting one is a dashboard flow. Once it is connected,
-  `events.replace_event_payment_gateway` assigns it to an event.
+- **Payment gateways.** A gateway is set up in the SeatLayer dashboard, not through this SDK. Once
+  it is set up, `events.replace_event_payment_gateway` assigns it to an event.
 - **Realtime seat updates.** Live seat changes reach buyers through the seat map itself. There is
   no server-side live feed; a server reads the current state with `events.retrieve_report` and
   `inventory.retrieve_availability`.
 
-Neither of these two (connecting a gateway, a server-side live feed) is part of the public API, so
+Neither of these two (setting up a gateway, a server-side live feed) is part of the public API, so
 `request` does not support them either.
 
 ## Frequently asked questions
