@@ -509,12 +509,12 @@ Some API surface is intentionally unwrapped, not merely pending:
 
 - **Connecting a payment gateway.** Connecting one is a dashboard flow. Once it is connected,
   `events.replace_event_payment_gateway` assigns it to an event.
-- **Realtime seat updates.** Live seat state reaches the *browser* through the widget's own socket.
-  There is no server-side subscribe; a secret-key caller gets authoritative state from
-  `events.retrieve_report` and `inventory.retrieve_availability`.
+- **Realtime seat updates.** Live seat changes reach buyers through the seat map itself. There is
+  no server-side live feed; a server reads the current state with `events.retrieve_report` and
+  `inventory.retrieve_availability`.
 
-Neither is reachable through `request` as a supported path either; both are excluded from the
-public manifest, not just from the wrapper.
+Neither of these two (connecting a gateway, a server-side live feed) is part of the public API, so
+`request` does not support them either.
 
 ## Frequently asked questions
 
