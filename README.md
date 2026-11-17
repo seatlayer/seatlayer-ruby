@@ -365,8 +365,8 @@ feature policy under `result["session"]`. Pass `safe_mode_options` only with `mo
 
 Subscription responses use the wire envelopes exactly: `list` returns `{"subs" => [...]}`,
 `create` returns `{"sub" => ..., "secret" => ...}` (the secret is shown once), and `update`
-returns `{"sub" => ...}`. `SeatLayer::Webhooks::EVENT_NAMES` is the exact 56-name public event set;
-delivery history accepts `limit`, `status` (`"ok"` or `"failed"`), and `before`.
+returns `{"sub" => ...}`. `SeatLayer::Webhooks::EVENT_NAMES` lists every event name this version
+accepts; delivery history accepts `limit`, `status` (`"ok"` or `"failed"`), and `before`.
 
 Verify every delivery against the **raw** body. Re-encoding a parsed Hash changes the bytes and
 verification will fail.
