@@ -89,7 +89,7 @@ The hint is best effort, not a data-residency guarantee. See the
 Nullable event-create fields distinguish omission from an explicit reset: passing, for example,
 `venue: nil` sends JSON `null`; leaving `venue` out sends no field.
 
-## Fixed Renewable Seasons
+## Season tickets (Fixed Renewable Seasons)
 
 `client.seasons` has all 90 season operations: seasons and their packages, dates
 and package prices (per price type, set with `"priceTypeKey"`: `adult`, `child`,
