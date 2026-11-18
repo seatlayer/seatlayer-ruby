@@ -1,16 +1,25 @@
-# SeatLayer Ruby Server SDK for Reserved Seating
+# SeatLayer Ruby SDK: seat booking, reserved seating and season ticket API
 
 [![CI](https://github.com/seatlayer/seatlayer-ruby/actions/workflows/ci.yml/badge.svg)](https://github.com/seatlayer/seatlayer-ruby/actions/workflows/ci.yml)
 [![Gem](https://img.shields.io/gem/v/seatlayer.svg)](https://rubygems.org/gems/seatlayer)
 [![Ruby](https://img.shields.io/badge/Ruby-%E2%89%A53.0-CC342D.svg)](https://www.ruby-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
-The official Ruby client for the SeatLayer API. The `seatlayer` gem lets a Ruby or Rails backend inspect seat holds, price orders from server data, book reserved seats and verify webhooks, with no runtime dependencies. SeatLayer is seating chart and reserved-seat ticketing software built for venues up to stadium scale.
+The `seatlayer` gem is SeatLayer's official Ruby SDK for Rails, Sinatra and plain Ruby apps on Ruby 3.0 or newer. A
+controller reads what a buyer holds with the real prices, books it under your order id and verifies
+SeatLayer's signed webhooks from `request.raw_post`; season tickets, renewals and box office sales
+use the same client, with no gems beyond the standard library.
 
-SeatLayer's official Ruby server SDK is the trusted side of its reserved seating and seat booking
-API. Inspect what a hold really contains, price from server-owned seating-chart data, and book
-with a stable `booking_ref`, while managing charts, events, inventory, allocations, and webhooks
-through one typed ticketing API client.
+## What SeatLayer is
+
+SeatLayer is reserved-seat ticketing and seating software: organizers sell with hosted checkout,
+a box office, door check-in and season tickets, and platforms add the same seat maps, with 3D
+seat views, through the SeatLayer SDK and API. One chart drives the 2D map, the 3D venue and the
+view from each seat (3D for venues up to 60,000 seats; the 2D map benchmarked at 200,000 seats).
+
+[Website](https://seatlayer.io/) · [For developers](https://seatlayer.io/developers/) ·
+[Season tickets](https://seatlayer.io/season-tickets/) · [Pricing](https://seatlayer.io/pricing/) ·
+[Live demo](https://seatlayer.io/demo/)
 
 [`seatlayer` gem on RubyGems](https://rubygems.org/gems/seatlayer) ·
 [Ruby server SDK guide](https://docs.seatlayer.io/server-sdk/ruby/) ·
@@ -24,10 +33,6 @@ through one typed ticketing API client.
 **How it works:** the buyer picks and holds seats in your website or app with your public key. Your server then reads the hold, takes the payment through your own provider, and books the seats with this SDK and your secret key.
 
 **Start here:** [Quickstart](https://docs.seatlayer.io/start/quickstart/) · [Holds and checkout](https://docs.seatlayer.io/buyer-sdk/holds-and-checkout/) · [Ruby server SDK guide](https://docs.seatlayer.io/server-sdk/ruby/) · [SDK catalog](https://docs.seatlayer.io/sdk-catalog.json) · [Pricing](https://seatlayer.io/pricing/): 100 sold seats free every month, then 10¢ down to 5¢ per sold seat. No subscription, and purchased credits never expire. Test mode is free.
-
-## Scale evidence
-
-Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Tested at 10,000 simulated concurrent buyers on one 12,000-seat event (18 September 2026): engine-side hold latency p99 9 ms, zero server errors. Method, fixtures and run files: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k.
 
 ## Install the Ruby seat booking SDK
 
@@ -84,7 +89,7 @@ The hint is best effort, not a data-residency guarantee. See the
 Nullable event-create fields distinguish omission from an explicit reset: passing, for example,
 `venue: nil` sends JSON `null`; leaving `venue` out sends no field.
 
-## Fixed Renewable Seasons
+## Season tickets (Fixed Renewable Seasons)
 
 `client.seasons` has all 90 season operations: seasons and their packages, dates
 and package prices (per price type, set with `"priceTypeKey"`: `adult`, `child`,
@@ -428,11 +433,11 @@ error carries `status`, `code`, `body` and `request_id`. Quote the request id in
 ## Reliability
 
 **Retries.** Reads (`GET`/`HEAD`) retry 429, 408 and 5xx with exponential backoff and full jitter;
-`Retry-After` wins when the server sends it. Forty-one mutations use exact header replay:
+`Retry-After` wins when the server sends it. Forty-three mutations use exact header replay:
 
 - `charts.create`, `charts.copy`, `templates.instantiate_template`, `events.create`,
   `workspaces.create`, and `performance_groups.create`;
-- 26 on `seasons`: `create_season`, `update_season`, `delete_season`, `create_season_plan`,
+- 28 on `seasons`: `create_season`, `update_season`, `delete_season`, `create_season_plan`,
   `update_season_plan`, `delete_season_plan`, `publish_season`, `duplicate_season_to_live`,
   `create_season_holder_import`, `create_season_holder_import_from_season`,
   `create_season_renewal_offers`, `create_season_amendment`, `create_season_performances`,
@@ -440,7 +445,7 @@ error carries `status`, `code`, `body` and `request_id`. Quote the request id in
   `replace_season_package_prices`, `attach_season_plan_performance`,
   `delete_season_plan_performance`, `mark_season_performance_past`, `refund_season_order`,
   `cancel_season_order`, `cancel_season_order_date`, `refund_season_performance`,
-  `release_season_lapsed_offers`, and `create_season_renewal_checkout`;
+  `release_season_lapsed_offers`, `create_season_renewal_checkout`, `set_aside_season_block`, and `release_season_block`;
 - `holders.update_holder`, `holders.create_holder_transfer`, `holders.create_holder_return`, and
   `holders.create_holder_renewal_checkout`;
 - `orders.refund_event_order` and `orders.cancel_event_order`;
@@ -449,7 +454,7 @@ error carries `status`, `code`, `body` and `request_id`. Quote the request id in
 
 Other 4xx responses are never retried.
 
-**Idempotency.** Those 41 replay-backed operations carry an `Idempotency-Key`, generated when you
+**Idempotency.** Those 43 replay-backed operations carry an `Idempotency-Key`, generated when you
 do not supply one and reused across attempts. All remaining SDK mutations are single-attempt. Some
 have a server-side domain idempotency contract, but the SDK does not retry them automatically. This
 includes inventory holds and bookings, show-once credential or secret creation, unsupported
@@ -516,34 +521,42 @@ Neither of these two (setting up a gateway, a server-side live feed) is part of 
 
 ## Frequently asked questions
 
+### What does the SeatLayer API do for a ticketing platform?
+
+SeatLayer gives your Ruby backend one API for seating charts, live seat holds, booking, box office
+sales and season tickets, with official SDKs in Node.js, Python, PHP, Java, Go, Ruby and .NET.
+Buyers pick seats on the same SeatLayer map on the web, iOS, Android, Flutter and React Native, and
+your server books what they hold with your own order id, so a retried booking never sells a seat
+twice. You pay only for sold seats: 100 a month are free, then 10¢ down to 5¢ a seat, with no
+subscription, and holds and test mode cost nothing. Its measured results are under Scale evidence
+below.
+
+### How much does the SeatLayer API cost?
+
+Building and testing is free: test mode has no time limit, needs no card and uses no credits. Live,
+with your own checkout, you pay one credit per confirmed sold seat: the first 100 sold seats each
+month are free, then 10¢ down to 5¢ a seat, with no subscription, and purchased credits never
+expire. Designing charts, showing the map, holds and releases never use a credit. An event that
+sells through SeatLayer's checkout costs $0.50 per ticket instead, and your first 25 tickets are
+free.
+
 ### How do I book seats from Ruby?
 
-Create a client with your secret key, obtain a hold id (either from the buyer's
-browser session or by holding server-side) and call `inventory.book(event_key, hold_id: ..., booking_ref: ...)`.
-`booking_ref` is your own stable order id and is the join between SeatLayer
-inventory and your commercial order, so the same reference identifies the booking
-in Booking History and when you later cancel it. For phone orders, box office, and
-comps, `inventory.book_best_available` books outright with no browser involved.
+Create a client with your secret key, read the buyer's hold with `inventory.retrieve_hold` to get
+the real seats and prices, take the payment, then call
+`inventory.book(event_key, hold_id: ..., booking_ref: ...)` with your own order id as `booking_ref`.
+For phone orders, the box office and comps, `inventory.book_best_available` picks and books the best available seats in one call, with no browser involved. Keep that `booking_ref` for the order: it finds the
+booking again in `inventory.list_bookings` and cancels it with `inventory.unbook`.
 
-### What does the server SDK do compared with the buyer SDK?
+### How do I stop two buyers taking the same seat?
 
-The buyer SDK runs where the ticket buyer is: it renders the interactive seating
-chart, handles seat selection, and creates temporary holds. This server SDK is the
-trusted side. It authenticates with your secret key, inspects what a hold actually
-contains, prices from server-owned data, and books. Never bundle the secret key
-into a browser or a mobile app. Browser surfaces get short-lived, origin-bound
-tokens that you mint here.
-
-### How do temporary holds work server-side?
-
-A hold reserves seats against concurrent buyers for a limited window.
-`inventory.retrieve_hold(event_key, hold_id)` is the authoritative answer for what is held
-and at what price, so charge from its `items` rather than from anything the browser
-sent you. When an order runs longer than the checkout window, `inventory.extend_hold`
-renews the hold instead of releasing and re-holding, which would hand the seats to
-whoever is racing for them. Bookings carry the server's exact-selection plus
-`booking_ref` safeguard, but the SDK sends each booking once; reconcile an unknown
-outcome before trying again.
+In the SeatLayer picker, a buyer's seats are held when they go to checkout; with the headless `SeatingChart`, your page calls `hold()`. The hold keeps those seats for that buyer for a set time, which you can change
+per event, and every other buyer sees them taken. Your server reads the hold with
+`inventory.retrieve_hold`, charges from the prices it returns rather than anything the browser sent,
+and books it; `inventory.extend_hold` gives a slow checkout more time without letting the seats go.
+If a booking call times out, check `inventory.list_bookings` for that `booking_ref`, or repeat the exact same
+booking with the same hold and `booking_ref`: seats already booked under it are not sold again,
+though the repeat can return an empty booked list.
 
 ### Can I use my own payment provider?
 
@@ -552,6 +565,23 @@ you already use, then books the seats with your order id as `booking_ref`, and S
 touches the money. If you would rather SeatLayer run the checkout for an event
 (`events.replace_event_buyer_checkout`), buyers pay through one of 14 payment gateways, including
 Stripe, PayPal and Square, straight into your own account.
+
+### How do I sell season tickets and renewals through an API?
+
+The season API is in this SDK: `client.seasons` has all 90 season operations. You create a season
+from its dates with `create_season`, the buyer chooses one seat in the browser `SeasonPicker` and
+the season hold takes it on every date at once, and your server books it with `book_season_hold`;
+for the next season, `create_season_renewal_offers` offers each holder the same seat.
+`set_aside_season_block` sets season seats aside on every date before sales open, and with your own
+checkout each season seat uses one SDK credit per date, like any other sold seat.
+
+### Does it work with Rails?
+
+Yes. Create a client with `ENV.fetch("SEATLAYER_SECRET_KEY")` and call it from your controllers and
+jobs. For webhooks, pass `request.raw_post` to `SeatLayer::Webhook.verify` in a controller that
+skips `verify_authenticity_token`; in Sinatra the raw body is `request.body.read`. API, network and
+webhook errors all descend from `SeatLayer::Error`, so one `rescue` catches them; a missing
+argument, such as an empty `booking_ref`, raises `ArgumentError` before any request is sent.
 
 ## Continue your Ruby integration
 
@@ -569,6 +599,9 @@ Stripe, PayPal and Square, straight into your own account.
   (`llms.txt`) for an agent-readable map of the documentation.
 - [Explore every SeatLayer SDK on GitHub](https://github.com/seatlayer)
   across web, mobile, and server.
+- [Season ticket API guide](https://seatlayer.io/guides/season-ticket-api/): build a season end to end.
+- [Box office](https://seatlayer.io/box-office/): sell at the counter from the same live seats.
+- [SDK and API overview](https://seatlayer.io/developers/) and [pricing](https://seatlayer.io/pricing/).
 
 ### Other SeatLayer SDKs
 
@@ -576,6 +609,8 @@ Stripe, PayPal and Square, straight into your own account.
 | --- | --- |
 | JavaScript | [`@seatlayer/js`](https://www.npmjs.com/package/@seatlayer/js) |
 | React | [`@seatlayer/react`](https://www.npmjs.com/package/@seatlayer/react) |
+| Vue | [`@seatlayer/vue`](https://www.npmjs.com/package/@seatlayer/vue) |
+| Angular | [`@seatlayer/angular`](https://www.npmjs.com/package/@seatlayer/angular) |
 | React Native | [`@seatlayer/react-native`](https://www.npmjs.com/package/@seatlayer/react-native) |
 | iOS | [`seatlayer-ios`](https://github.com/seatlayer/seatlayer-ios) |
 | Flutter | [`seatlayer`](https://pub.dev/packages/seatlayer) |
@@ -587,6 +622,10 @@ Stripe, PayPal and Square, straight into your own account.
 | .NET (server) | [`SeatLayer`](https://www.nuget.org/packages/SeatLayer) |
 | Java (server) | [`io.seatlayer:seatlayer-java`](https://central.sonatype.com/artifact/io.seatlayer/seatlayer-java) |
 | Go (server) | [`github.com/seatlayer/seatlayer-go`](https://pkg.go.dev/github.com/seatlayer/seatlayer-go) |
+
+## Scale evidence
+
+Benchmarked on public 100,000-, 150,000- and 200,000-seat venue fixtures on 15 September 2026: 200,000 seats chart-ready in 1.95 s, desktop, local production build. Tested at 10,000 simulated concurrent buyers on one 12,000-seat event (18 September 2026): engine-side hold latency p99 9 ms, zero server errors. Method, fixtures and run files: https://github.com/seatlayer/seatlayer-performance. Live 200,000-seat stadium demo: https://app.seatlayer.io/demo/play/century-stadium-200k.
 
 ## Development
 
