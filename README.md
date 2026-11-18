@@ -1,16 +1,14 @@
-# SeatLayer Ruby Server SDK for Reserved Seating
+# SeatLayer Ruby SDK: seat booking, reserved seating and season ticket API
 
 [![CI](https://github.com/seatlayer/seatlayer-ruby/actions/workflows/ci.yml/badge.svg)](https://github.com/seatlayer/seatlayer-ruby/actions/workflows/ci.yml)
 [![Gem](https://img.shields.io/gem/v/seatlayer.svg)](https://rubygems.org/gems/seatlayer)
 [![Ruby](https://img.shields.io/badge/Ruby-%E2%89%A53.0-CC342D.svg)](https://www.ruby-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
-The official Ruby client for the SeatLayer API. The `seatlayer` gem lets a Ruby or Rails backend inspect seat holds, price orders from server data, book reserved seats and verify webhooks, with no runtime dependencies. SeatLayer is seating chart and reserved-seat ticketing software built for venues up to stadium scale.
-
-SeatLayer's official Ruby server SDK is the trusted side of its reserved seating and seat booking
-API. Inspect what a hold really contains, price from server-owned seating-chart data, and book
-with a stable `booking_ref`, while managing charts, events, inventory, allocations, and webhooks
-through one typed ticketing API client.
+The `seatlayer` gem is SeatLayer's official Ruby SDK for Rails, Sinatra and plain Ruby 3.0 apps. A
+controller reads what a buyer holds with the real prices, books it under your order id and verifies
+SeatLayer's signed webhooks from `request.raw_post`; season tickets, renewals and box office sales
+use the same client, with no gems beyond the standard library.
 
 [`seatlayer` gem on RubyGems](https://rubygems.org/gems/seatlayer) ·
 [Ruby server SDK guide](https://docs.seatlayer.io/server-sdk/ruby/) ·
