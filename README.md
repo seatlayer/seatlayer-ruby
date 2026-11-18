@@ -10,6 +10,17 @@ controller reads what a buyer holds with the real prices, books it under your or
 SeatLayer's signed webhooks from `request.raw_post`; season tickets, renewals and box office sales
 use the same client, with no gems beyond the standard library.
 
+## What SeatLayer is
+
+SeatLayer is reserved-seat ticketing and seating software: organizers sell with hosted checkout,
+a box office, door check-in and season tickets, and platforms add the same seat maps, with 3D
+seat views, through the SeatLayer SDK and API. One chart drives the 2D map, the 3D venue and the
+view from each seat (3D for venues up to 60,000 seats; the 2D map benchmarked at 200,000 seats).
+
+[Website](https://seatlayer.io/) · [For developers](https://seatlayer.io/developers/) ·
+[Season tickets](https://seatlayer.io/season-tickets/) · [Pricing](https://seatlayer.io/pricing/) ·
+[Live demo](https://seatlayer.io/demo/)
+
 [`seatlayer` gem on RubyGems](https://rubygems.org/gems/seatlayer) ·
 [Ruby server SDK guide](https://docs.seatlayer.io/server-sdk/ruby/) ·
 [SeatLayer developer platform](https://seatlayer.io/developers/) ·
