@@ -5,7 +5,7 @@
 [![Ruby](https://img.shields.io/badge/Ruby-%E2%89%A53.0-CC342D.svg)](https://www.ruby-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg)](LICENSE)
 
-The `seatlayer` gem is SeatLayer's official Ruby SDK for Rails, Sinatra and plain Ruby 3.0 apps. A
+The `seatlayer` gem is SeatLayer's official Ruby SDK for Rails, Sinatra and plain Ruby apps on Ruby 3.0 or newer. A
 controller reads what a buyer holds with the real prices, books it under your order id and verifies
 SeatLayer's signed webhooks from `request.raw_post`; season tickets, renewals and box office sales
 use the same client, with no gems beyond the standard library.
@@ -433,11 +433,11 @@ error carries `status`, `code`, `body` and `request_id`. Quote the request id in
 ## Reliability
 
 **Retries.** Reads (`GET`/`HEAD`) retry 429, 408 and 5xx with exponential backoff and full jitter;
-`Retry-After` wins when the server sends it. Forty-one mutations use exact header replay:
+`Retry-After` wins when the server sends it. Forty-three mutations use exact header replay:
 
 - `charts.create`, `charts.copy`, `templates.instantiate_template`, `events.create`,
   `workspaces.create`, and `performance_groups.create`;
-- 26 on `seasons`: `create_season`, `update_season`, `delete_season`, `create_season_plan`,
+- 28 on `seasons`: `create_season`, `update_season`, `delete_season`, `create_season_plan`,
   `update_season_plan`, `delete_season_plan`, `publish_season`, `duplicate_season_to_live`,
   `create_season_holder_import`, `create_season_holder_import_from_season`,
   `create_season_renewal_offers`, `create_season_amendment`, `create_season_performances`,
@@ -445,7 +445,7 @@ error carries `status`, `code`, `body` and `request_id`. Quote the request id in
   `replace_season_package_prices`, `attach_season_plan_performance`,
   `delete_season_plan_performance`, `mark_season_performance_past`, `refund_season_order`,
   `cancel_season_order`, `cancel_season_order_date`, `refund_season_performance`,
-  `release_season_lapsed_offers`, and `create_season_renewal_checkout`;
+  `release_season_lapsed_offers`, `create_season_renewal_checkout`, `set_aside_season_block`, and `release_season_block`;
 - `holders.update_holder`, `holders.create_holder_transfer`, `holders.create_holder_return`, and
   `holders.create_holder_renewal_checkout`;
 - `orders.refund_event_order` and `orders.cancel_event_order`;
@@ -454,7 +454,7 @@ error carries `status`, `code`, `body` and `request_id`. Quote the request id in
 
 Other 4xx responses are never retried.
 
-**Idempotency.** Those 41 replay-backed operations carry an `Idempotency-Key`, generated when you
+**Idempotency.** Those 43 replay-backed operations carry an `Idempotency-Key`, generated when you
 do not supply one and reused across attempts. All remaining SDK mutations are single-attempt. Some
 have a server-side domain idempotency contract, but the SDK does not retry them automatically. This
 includes inventory holds and bookings, show-once credential or secret creation, unsupported
@@ -545,19 +545,18 @@ free.
 Create a client with your secret key, read the buyer's hold with `inventory.retrieve_hold` to get
 the real seats and prices, take the payment, then call
 `inventory.book(event_key, hold_id: ..., booking_ref: ...)` with your own order id as `booking_ref`.
-For phone orders, the box office and comps, `inventory.book_best_available` picks and books the best
-seats in one call, with no browser involved. Keep that `booking_ref` for the order: it finds the
+For phone orders, the box office and comps, `inventory.book_best_available` picks and books the best available seats in one call, with no browser involved. Keep that `booking_ref` for the order: it finds the
 booking again in `inventory.list_bookings` and cancels it with `inventory.unbook`.
 
 ### How do I stop two buyers taking the same seat?
 
-In the SeatLayer picker, a buyer's seats are held when they go to checkout; with the bare chart,
-your code calls hold. The hold keeps those seats for that buyer for a set time, which you can change
-per event, and every other buyer sees them taken at once. Your server reads the hold with
+In the SeatLayer picker, a buyer's seats are held when they go to checkout; with the headless `SeatingChart`, your page calls `hold()`. The hold keeps those seats for that buyer for a set time, which you can change
+per event, and every other buyer sees them taken. Your server reads the hold with
 `inventory.retrieve_hold`, charges from the prices it returns rather than anything the browser sent,
 and books it; `inventory.extend_hold` gives a slow checkout more time without letting the seats go.
-If a booking call times out, send it again with the same hold and the same `booking_ref`: seats
-already booked under that reference are never sold twice.
+If a booking call times out, check `inventory.list_bookings` for that `booking_ref`, or repeat the exact same
+booking with the same hold and `booking_ref`: seats already booked under it are not sold again,
+though the repeat can return an empty booked list.
 
 ### Can I use my own payment provider?
 
